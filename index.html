@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grand Millado Hotel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Serif:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/tailwind.css">
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body class="app-loading">
+  <div class="splash-screen">
+    <div class="brand-mark">GMH</div>
+    <h1>Grand Millado Hotel</h1>
+    <p>Executive hotel operations platform</p>
+  </div>
+  <script type="module">
+    import { getSession } from "./assets/js/auth.js";
+
+    const session = await getSession();
+    window.location.replace(session ? "./dashboard.html" : "./login.html");
+  </script>
+</body>
+</html>

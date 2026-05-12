@@ -1,0 +1,20 @@
+:root {
+  --tw-shadow: 0 0 #0000;
+  --tw-ring-color: rgba(197, 160, 89, 0.35);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
