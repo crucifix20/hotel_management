@@ -26,8 +26,18 @@ export function renderCheckoutReceiptPage({ settings, reservation, folio, receip
   const room = reservation.rooms || {};
   const roomType = room.room_types || {};
   const guest = reservation.guests || {};
-  const lastPayment = (folio.payments || []).slice().sort((a, b) => new Date(b.paid_at || b.created_at) - new Date(a.paid_at || a.created_at))[0];
+  const payments = (folio.payments || []).slice().sort((a, b) => new Date(b.paid_at || b.created_at) - new Date(a.paid_at || a.created_at));
+  const lastPayment = payments[0];
+  const checkoutPayment = payments.find((payment) => payment.transaction_type === "Checkout Payment") || lastPayment;
+  const previousPaymentsTotal = payments
+    .filter((payment) => payment.id !== checkoutPayment?.id && payment.payment_status !== "Refunded")
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const benefitUsage = reservation.club_benefit_usage || [];
+  const staffName = checkoutPayment?.received_by_profile?.full_name
+    || reservation.checked_out_by_profile?.full_name
+    || reservation.checked_in_by_profile?.full_name
+    || reservation.created_by_profile?.full_name
+    || "Front Desk";
 
   return `
     <div class="print-shell">
@@ -83,10 +93,12 @@ export function renderCheckoutReceiptPage({ settings, reservation, folio, receip
             </table>
           </div>
           <div class="detail-grid" style="margin-top:18px;">
-            <dl class="detail-kv"><dt>Room Charges / Folio Total</dt><dd>${escapeHtml(formatCurrency(folio.invoice.total || 0))}</dd></dl>
+            <dl class="detail-kv"><dt>Final Folio Total</dt><dd>${escapeHtml(formatCurrency(folio.invoice.total || 0))}</dd></dl>
             <dl class="detail-kv"><dt>Downpayment</dt><dd>${escapeHtml(formatCurrency(reservation.downpayment_paid || 0))}</dd></dl>
             <dl class="detail-kv"><dt>Incidental Deposit</dt><dd>${escapeHtml(formatCurrency(reservation.incidental_deposit_paid || 0))}</dd></dl>
-            <dl class="detail-kv"><dt>Payments</dt><dd>${escapeHtml(formatCurrency(folio.totalPayments || 0))}</dd></dl>
+            <dl class="detail-kv"><dt>Previous Payments</dt><dd>${escapeHtml(formatCurrency(previousPaymentsTotal || 0))}</dd></dl>
+            <dl class="detail-kv"><dt>Checkout Payment</dt><dd>${escapeHtml(formatCurrency(checkoutPayment?.amount || 0))}</dd></dl>
+            <dl class="detail-kv"><dt>Total Paid</dt><dd>${escapeHtml(formatCurrency(folio.totalPayments || 0))}</dd></dl>
             <dl class="detail-kv"><dt>Refundable Amount</dt><dd>${escapeHtml(formatCurrency(folio.refundableAmount || 0))}</dd></dl>
             <dl class="detail-kv"><dt>Final Balance</dt><dd>${escapeHtml(formatCurrency(folio.outstandingBalance || 0))}</dd></dl>
           </div>
@@ -94,10 +106,11 @@ export function renderCheckoutReceiptPage({ settings, reservation, folio, receip
         <section class="print-section">
           <h2>Payment Summary</h2>
           <div class="detail-grid">
-            <dl class="detail-kv"><dt>Last Payment Method</dt><dd>${escapeHtml(lastPayment?.payment_method || "-")}</dd></dl>
-            <dl class="detail-kv"><dt>Reference</dt><dd>${escapeHtml(lastPayment?.payment_reference || "-")}</dd></dl>
-            <dl class="detail-kv"><dt>Payment Time</dt><dd>${escapeHtml(formatDateTime(lastPayment?.paid_at || lastPayment?.created_at))}</dd></dl>
+            <dl class="detail-kv"><dt>Checkout Payment Method</dt><dd>${escapeHtml(checkoutPayment?.payment_method || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Payment Reference</dt><dd>${escapeHtml(checkoutPayment?.payment_reference || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Date / Time Paid</dt><dd>${escapeHtml(formatDateTime(checkoutPayment?.paid_at || checkoutPayment?.created_at))}</dd></dl>
             <dl class="detail-kv"><dt>Invoice Status</dt><dd>${escapeHtml(folio.invoice.status || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Cashier</dt><dd>${escapeHtml(checkoutPayment?.received_by_profile?.full_name || reservation.checked_out_by_profile?.full_name || "Front Desk")}</dd></dl>
           </div>
         </section>
         ${benefitUsage.length ? `
@@ -125,7 +138,11 @@ export function renderCheckoutReceiptPage({ settings, reservation, folio, receip
         <section class="print-section">
           <h2>Thank You</h2>
           <p class="muted">Thank you for staying with Grand Millado Hotel. Please retain this receipt for your records. Refundable deposits, if any, are reflected above and processed according to the recorded settlement.</p>
-          <div class="signature-line">Grand Millado Hotel Front Office Signature</div>
+          <div class="signature-line">
+            <strong>${escapeHtml(staffName)}</strong><br>
+            Grand Millado Hotel Front Office<br>
+            Signature over Printed Name
+          </div>
         </section>
       </article>
     </div>

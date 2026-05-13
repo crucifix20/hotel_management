@@ -101,10 +101,10 @@ create table if not exists public.reservations (
   status text not null default 'Pending' check (status in ('Pending', 'Confirmed', 'Checked In', 'Checked Out', 'Cancelled', 'No Show')),
   payment_status text not null default 'Unpaid' check (payment_status in ('Unpaid', 'Partial', 'Paid', 'Refunded')),
   total_amount numeric(12, 2) not null default 0,
-  downpayment_required boolean not null default false,
+  downpayment_required boolean not null default true,
   downpayment_amount numeric(12, 2) not null default 0,
   downpayment_paid numeric(12, 2) not null default 0,
-  downpayment_status text not null default 'Not Required' check (downpayment_status in ('Not Required', 'Required', 'Partially Paid', 'Paid', 'Refunded')),
+  downpayment_status text not null default 'Required' check (downpayment_status in ('Not Required', 'Required', 'Partially Paid', 'Paid', 'Refunded')),
   incidental_deposit_amount numeric(12, 2) not null default 0,
   incidental_deposit_paid numeric(12, 2) not null default 0,
   special_requests text,
@@ -137,10 +137,10 @@ create table if not exists public.reservations (
   constraint reservation_downpayment_capped check (downpayment_amount <= total_amount and downpayment_paid <= total_amount)
 );
 
-alter table public.reservations add column if not exists downpayment_required boolean not null default false;
+alter table public.reservations add column if not exists downpayment_required boolean not null default true;
 alter table public.reservations add column if not exists downpayment_amount numeric(12, 2) not null default 0;
 alter table public.reservations add column if not exists downpayment_paid numeric(12, 2) not null default 0;
-alter table public.reservations add column if not exists downpayment_status text not null default 'Not Required';
+alter table public.reservations add column if not exists downpayment_status text not null default 'Required';
 alter table public.reservations add column if not exists incidental_deposit_amount numeric(12, 2) not null default 0;
 alter table public.reservations add column if not exists incidental_deposit_paid numeric(12, 2) not null default 0;
 alter table public.reservations add column if not exists internal_notes text;
@@ -201,6 +201,8 @@ create table if not exists public.payments (
   amount numeric(12, 2) not null default 0,
   payment_method text not null,
   payment_reference text,
+  transaction_type text,
+  received_by uuid references public.users_profile (id) on delete set null,
   notes text,
   payment_status text not null default 'Paid' check (payment_status in ('Unpaid', 'Partial', 'Paid', 'Refunded')),
   paid_at timestamptz,
@@ -209,7 +211,20 @@ create table if not exists public.payments (
 
 alter table public.payments add column if not exists reservation_id bigint references public.reservations (id) on delete set null;
 alter table public.payments add column if not exists payment_reference text;
+alter table public.payments add column if not exists transaction_type text;
+alter table public.payments add column if not exists received_by uuid references public.users_profile (id) on delete set null;
 alter table public.payments add column if not exists notes text;
+alter table public.reservations alter column downpayment_required set default true;
+alter table public.reservations alter column downpayment_status set default 'Required';
+update public.reservations
+set downpayment_required = true
+where downpayment_required = false;
+update public.reservations
+set downpayment_status = 'Required'
+where downpayment_required = true
+  and coalesce(downpayment_amount, 0) > 0
+  and coalesce(downpayment_paid, 0) = 0
+  and downpayment_status = 'Not Required';
 
 create table if not exists public.hotel_services (
   id bigserial primary key,
@@ -347,6 +362,11 @@ create index if not exists idx_housekeeping_tasks_room_status on public.housekee
 create index if not exists idx_invoices_reservation on public.invoices (reservation_id);
 create index if not exists idx_payments_invoice on public.payments (invoice_id);
 create index if not exists idx_payments_reservation on public.payments (reservation_id);
+create index if not exists idx_payments_received_by on public.payments (received_by);
+create index if not exists idx_payments_paid_at on public.payments (paid_at desc);
+create index if not exists idx_reservations_confirmation_number on public.reservations (confirmation_number);
+create index if not exists idx_reservations_guest on public.reservations (guest_id);
+create index if not exists idx_reservations_room on public.reservations (room_id);
 create index if not exists idx_amenity_bookings_guest on public.amenity_bookings (guest_id);
 create index if not exists idx_service_orders_reservation on public.service_orders (reservation_id, status);
 create index if not exists idx_service_orders_guest on public.service_orders (guest_id, status);
@@ -599,6 +619,7 @@ declare
   invoice_ref record;
   paid_total numeric(12, 2);
   refundable_total numeric(12, 2);
+  downpayment_total numeric(12, 2);
   derived_downpayment_status text;
 begin
   select *
@@ -612,8 +633,16 @@ begin
 
   select
     coalesce(sum(case when payment_status <> 'Refunded' then amount else 0 end), 0),
-    coalesce(sum(case when payment_status = 'Refunded' then amount else 0 end), 0)
-  into paid_total, refundable_total
+    coalesce(sum(case when payment_status = 'Refunded' then amount else 0 end), 0),
+    coalesce(sum(
+      case
+        when payment_status <> 'Refunded'
+         and coalesce(transaction_type, 'Reservation Downpayment') = 'Reservation Downpayment'
+        then amount
+        else 0
+      end
+    ), 0)
+  into paid_total, refundable_total, downpayment_total
   from public.payments
   where invoice_id = invoice_ref.id;
 
@@ -627,7 +656,7 @@ begin
 
   update public.reservations
   set
-    downpayment_paid = least(paid_total, total_amount),
+    downpayment_paid = least(downpayment_total, total_amount),
     downpayment_status = case
       when refundable_total > 0 and paid_total = 0 then 'Refunded'
       else derived_downpayment_status

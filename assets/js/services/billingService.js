@@ -9,7 +9,7 @@ function invoiceQuery() {
       guests(id, full_name, email, phone),
       reservations(id, confirmation_number, status, payment_status, total_amount, downpayment_amount, downpayment_paid, incidental_deposit_amount, incidental_deposit_paid, check_in, check_out, rooms(room_number, room_types(name))),
       invoice_items(*),
-      payments(*)
+      payments(*, received_by_profile:users_profile!payments_received_by_fkey(full_name, role))
     `);
 }
 

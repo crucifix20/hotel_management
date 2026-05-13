@@ -31,6 +31,8 @@ hotel-management-system/
   settings.html
   clubs.html
   booking-confirmation.html
+  guest-folio.html
+  staff-accounting.html
 
   assets/
     css/
@@ -59,14 +61,17 @@ hotel-management-system/
 - Responsive sidebar, topbar, cards, tables, forms, modals, and print views
 - Room inventory management, status updates, filters, and room detail view
 - Reservation creation, editing, availability-based room assignment, check-in, check-out, cancellation, calendar view, and overlap prevention
+- Reservation flow includes inline guest creation without leaving the reservation page
+- Reservation downpayment is always required and auto-calculated at `30%` of the stay total by `DEFAULT_DOWNPAYMENT_RATE`
 - Guest creation, editing, stay history, VIP visibility, club visibility, amenity history, and invoice history
-- Housekeeping task management and room-status synchronization
+- Housekeeping task management and room-status synchronization for Admin and Staff operational users
 - Staff directory management for Admin users
 - Billing with invoice creation, payment recording, downpayment support, outstanding balance visibility, and club revenue tracking
+- Staff Accounting / Transaction Ledger for staff-processed payments and printable cashier-style reporting
 - Amenities CRUD, hotel service catalogue management, service order posting, and invoice charge support
 - VIP clubs with clubs, benefits, registrations, transactions, benefit usage tracking, membership fee billing support, and service-order benefit application
 - Admin-only reports with filterable operational, financial, housekeeping, audit, and VIP summaries
-- Print-friendly booking confirmation and checkout receipt pages with browser print and save-as-PDF flow
+- Print-friendly booking confirmation, guest folio, staff ledger, and checkout receipt pages with browser print and save-as-PDF flow
 
 ## Role Model
 
@@ -101,6 +106,8 @@ Staff users can access reservation-support workflows only:
 - Reservations
 - Reservation Calendar
 - Guests
+- Housekeeping
+- Accounting
 
 Staff users can:
 
@@ -110,12 +117,12 @@ Staff users can:
 - Check guests in and out
 - Create and edit guest profiles needed for reservations
 - Open and print booking confirmations through reservation records
+- Open and print guest folios before final checkout
 - View guest club status and apply the operational reservation and stay workflows allowed by the UI
-- Register guests into existing VIP clubs
+- View and print only the transactions they personally processed in the Staff Accounting ledger
 
 Staff users cannot access:
 
-- Housekeeping management
 - Staff directory management
 - Billing management
 - Amenities management
@@ -170,8 +177,10 @@ The application is a premium hotel front-end operations suite for Grand Millado 
   - `downpayment_amount`
   - `downpayment_paid`
   - `downpayment_status`
+- Every reservation requires a downpayment.
+- Required downpayment defaults to `30%` of the reservation total through `DEFAULT_DOWNPAYMENT_RATE`.
 - Downpayment values are validated against the reservation total.
-- Initial downpayments can be collected during reservation creation.
+- Initial downpayments are collected during reservation creation and stored in `payments`, not directly as payment-method fields on `reservations`.
 - Downpayment information appears in reservation financial summaries, billing, booking confirmation, and checkout folio views.
 - Payment records store method, date, reference number, and notes.
 
@@ -200,14 +209,28 @@ The application is a premium hotel front-end operations suite for Grand Millado 
 
 ### Check-Out Workflow
 
-- Check-out opens a folio-oriented modal with:
-  - stay summary
+- Check-out opens `guest-folio.html?id=RESERVATION_ID` first.
+- The Guest Folio is the pre-checkout review document and includes:
   - itemized charges
-  - extra last-minute charges
-  - payment settlement
-  - Admin-only override path for unpaid balances
+  - folio totals
+  - balance due
+  - front desk signature line
+  - guest signature line
+- From the Guest Folio page, the user can print the folio and then proceed to payment settlement.
 - Staff cannot complete checkout while a balance remains unpaid.
 - Successful checkout updates the reservation to `Checked Out`, moves the room to `Cleaning`, creates a turnover housekeeping task, and routes to the printable checkout receipt.
+
+### Staff Accounting Ledger
+
+- `staff-accounting.html` is available to Staff and Admin.
+- Staff can see only transactions where they are the recorded receiver / cashier.
+- Admin can review all staff-recorded payment transactions.
+- The ledger supports filters by:
+  - date range
+  - transaction type
+  - payment method
+  - guest / room / confirmation / reference search
+- The page includes a print-friendly transaction report with signature sections.
 
 ### Service Order Workflow
 
@@ -292,6 +315,8 @@ The application is a premium hotel front-end operations suite for Grand Millado 
 
 If you created auth users before running `schema.sql`, run `schema.sql` again after the trigger is installed. It includes a backfill step that syncs existing `auth.users` records into `users_profile`.
 
+After applying schema changes such as new `payments` columns or reservation defaults, rerun [`database/schema.sql`](database/schema.sql) in the Supabase SQL editor so the database schema and Supabase schema cache are refreshed before testing the frontend.
+
 ## Configure Supabase URL and Anon Key
 
 Edit [`assets/js/config.js`](assets/js/config.js) and replace:
@@ -368,6 +393,12 @@ It also adds:
 - Invoice and reservation payment status recalculation triggers
 - Service-order folio charge synchronization
 - Club benefit usage tracking for operational discounts and complimentary service coverage
+
+Recent schema alignment updates also ensure:
+
+- reservation inserts no longer expect `payment_method` or other payment-only fields on `reservations`
+- reservation downpayment defaults are enforced at the database level
+- staff transaction ledger metadata can be stored on `payments` using `received_by` and `transaction_type`
 
 ## How to Import Seed Data
 

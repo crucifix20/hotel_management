@@ -8,6 +8,7 @@ import { buildSelectOptions, createOptionList, friendlyError, formatDate, qs, re
 import { closeModal, confirmDialog, createPageHeader, createStatusBadge, openModal, showToast } from "../ui.js";
 
 await initProtectedPage("housekeeping", async ({ root, auth }) => {
+  const isAdmin = auth.profile.role === "Admin";
   let roomOptions = [];
   let staffOptions = [];
   let filters = { roomId: "", priority: "", status: "" };
@@ -27,7 +28,7 @@ await initProtectedPage("housekeeping", async ({ root, auth }) => {
       ${createPageHeader({
         title: "Housekeeping Operations",
         subtitle: "Task visibility, room turnaround, and assignment control.",
-        actions: `<button class="btn btn-primary" id="add-task-button" type="button">Add Task</button>`,
+        actions: isAdmin ? `<button class="btn btn-primary" id="add-task-button" type="button">Add Task</button>` : "",
       })}
       <section class="stitch-main-grid">
         <div>
@@ -58,9 +59,9 @@ await initProtectedPage("housekeeping", async ({ root, auth }) => {
                     </div>
                   </div>
                   <div class="table-actions" style="margin-top:18px;">
-                    <button class="btn btn-ghost hk-edit-button" data-id="${task.id}" type="button">Edit</button>
+                    <button class="btn btn-ghost hk-edit-button" data-id="${task.id}" type="button">${isAdmin ? "Edit" : "Update Notes"}</button>
                     <button class="btn btn-ghost hk-status-button" data-id="${task.id}" type="button">Advance Status</button>
-                    <button class="btn btn-danger hk-delete-button" data-id="${task.id}" type="button">Delete</button>
+                    ${isAdmin ? `<button class="btn btn-danger hk-delete-button" data-id="${task.id}" type="button">Delete</button>` : ""}
                   </div>
                 </div>
               </article>
@@ -169,9 +170,9 @@ await initProtectedPage("housekeeping", async ({ root, auth }) => {
                   <td>${formatDate(task.due_date)}${task.status !== "Completed" && task.due_date < todayIso() ? '<div class="validation-error">Overdue</div>' : ""}</td>
                   <td>
                     <div class="table-actions">
-                      <button class="btn btn-ghost hk-edit-button" data-id="${task.id}" type="button">Edit</button>
+                      <button class="btn btn-ghost hk-edit-button" data-id="${task.id}" type="button">${isAdmin ? "Edit" : "Update Notes"}</button>
                       <button class="btn btn-ghost hk-status-button" data-id="${task.id}" type="button">Advance Status</button>
-                      <button class="btn btn-danger hk-delete-button" data-id="${task.id}" type="button">Delete</button>
+                      ${isAdmin ? `<button class="btn btn-danger hk-delete-button" data-id="${task.id}" type="button">Delete</button>` : ""}
                     </div>
                   </td>
                 </tr>
@@ -195,27 +196,27 @@ await initProtectedPage("housekeeping", async ({ root, auth }) => {
         <div class="filter-row">
           <div class="field">
             <label for="room_id">Room</label>
-            <select id="room_id" name="room_id" required>${createOptionList(roomOptions, "id", "room_number", "Select room")}<\/select>
+            <select id="room_id" name="room_id" required ${isAdmin ? "" : "disabled"}>${createOptionList(roomOptions, "id", "room_number", "Select room")}<\/select>
           </div>
           <div class="field">
             <label for="assigned_staff_id">Assign Staff</label>
-            <select id="assigned_staff_id" name="assigned_staff_id">${createOptionList(staffOptions, "id", "full_name", "Select staff")}<\/select>
+            <select id="assigned_staff_id" name="assigned_staff_id" ${isAdmin ? "" : "disabled"}>${createOptionList(staffOptions, "id", "full_name", "Select staff")}<\/select>
           </div>
         </div>
         <div class="filter-row">
           <div class="field">
             <label for="task_type">Task Type</label>
-            <input id="task_type" name="task_type" value="${task.task_type || ""}" placeholder="Deep Clean" required>
+            <input id="task_type" name="task_type" value="${task.task_type || ""}" placeholder="Deep Clean" required ${isAdmin ? "" : "readonly"}>
           </div>
           <div class="field">
             <label for="due_date">Due Date</label>
-            <input id="due_date" name="due_date" type="date" value="${task.due_date?.slice(0, 10) || todayIso()}" required>
+            <input id="due_date" name="due_date" type="date" value="${task.due_date?.slice(0, 10) || todayIso()}" required ${isAdmin ? "" : "readonly"}>
           </div>
         </div>
         <div class="filter-row">
           <div class="field">
             <label for="priority">Priority</label>
-            <select id="priority" name="priority">${buildSelectOptions(HOUSEKEEPING_PRIORITIES, "Select priority")}<\/select>
+            <select id="priority" name="priority" ${isAdmin ? "" : "disabled"}>${buildSelectOptions(HOUSEKEEPING_PRIORITIES, "Select priority")}<\/select>
           </div>
           <div class="field">
             <label for="status">Status</label>
@@ -242,12 +243,17 @@ await initProtectedPage("housekeeping", async ({ root, auth }) => {
       try {
         await withFormBusy(event.currentTarget, task.id ? "Saving..." : "Creating...", async () => {
           const payload = serializeForm(event.currentTarget);
-          payload.room_id = Number(payload.room_id);
-          payload.assigned_staff_id = payload.assigned_staff_id ? Number(payload.assigned_staff_id) : null;
+          payload.room_id = Number(task.room_id || payload.room_id);
+          payload.assigned_staff_id = payload.assigned_staff_id ? Number(payload.assigned_staff_id) : (task.assigned_staff_id || null);
           if (!payload.id) {
             delete payload.id;
           } else {
             payload.id = Number(payload.id);
+          }
+          if (!isAdmin && task.id) {
+            payload.task_type = task.task_type;
+            payload.priority = task.priority;
+            payload.due_date = task.due_date?.slice(0, 10) || task.due_date;
           }
           const saved = await saveHousekeepingTask(payload);
           await createAuditLog({
@@ -274,10 +280,12 @@ await initProtectedPage("housekeeping", async ({ root, auth }) => {
   }
 
   function bindEvents(tasks) {
-    qs("#add-task-button").addEventListener("click", () => {
-      openModal({ title: "Add Housekeeping Task", body: taskFormMarkup() });
-      bindTaskForm();
-    });
+    if (isAdmin && qs("#add-task-button")) {
+      qs("#add-task-button").addEventListener("click", () => {
+        openModal({ title: "Add Housekeeping Task", body: taskFormMarkup() });
+        bindTaskForm();
+      });
+    }
 
     qs("#hk-room-filter").addEventListener("change", async (event) => { filters.roomId = event.target.value; await load(); });
     qs("#hk-priority-filter").addEventListener("change", async (event) => { filters.priority = event.target.value; await load(); });

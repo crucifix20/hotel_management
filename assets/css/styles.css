@@ -1548,6 +1548,25 @@ tbody tr:hover {
   padding-top: 10px;
 }
 
+.signature-grid,
+.print-ledger-signatures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  align-items: end;
+}
+
+.signature-block {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 180px;
+}
+
+.ledger-summary-print {
+  margin: 0 0 18px;
+}
+
 .print-card table {
   width: 100%;
   border-collapse: collapse;
@@ -2561,6 +2580,7 @@ tbody tr:hover {
   .sidebar-backdrop,
   .report-actions,
   .report-filters,
+  .ledger-filters,
   #reload-reports-button,
   #print-report-button {
     display: none !important;
@@ -2634,6 +2654,23 @@ tbody tr:hover {
   button,
   .sidebar-toggle {
     display: none !important;
+  }
+
+  body[data-page="staff-accounting"] .print-ledger-signatures,
+  body[data-page="guest-folio"] .signature-grid {
+    margin-top: 18mm;
+  }
+
+  body[data-page="staff-accounting"] .detail-grid,
+  body[data-page="guest-folio"] .detail-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+
+  body[data-page="staff-accounting"] .table-card,
+  body[data-page="guest-folio"] .table-card {
+    border: 0;
+    padding: 0;
   }
 
   body[data-page="checkout-receipt"] {

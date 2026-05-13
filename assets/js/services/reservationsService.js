@@ -1,8 +1,44 @@
+import { DEFAULT_DOWNPAYMENT_RATE } from "../config.js";
 import { addDays, differenceInNights, parseNumber, toIsoDate } from "../utils.js";
 import { supabase } from "../supabaseClient.js";
 
 const BLOCKING_RESERVATION_STATUSES = ["Pending", "Confirmed", "Checked In"];
 const NON_BLOCKING_RESERVATION_STATUSES = ["Cancelled", "Checked Out", "No Show"];
+const RESERVATION_COLUMNS = [
+  "id",
+  "guest_id",
+  "room_id",
+  "check_in",
+  "check_out",
+  "adults",
+  "children",
+  "status",
+  "payment_status",
+  "total_amount",
+  "downpayment_required",
+  "downpayment_amount",
+  "downpayment_paid",
+  "downpayment_status",
+  "incidental_deposit_amount",
+  "incidental_deposit_paid",
+  "special_requests",
+  "internal_notes",
+  "admin_notes",
+  "guest_verified",
+  "guest_id_type",
+  "guest_id_number",
+  "check_in_notes",
+  "checkout_notes",
+  "cancellation_reason",
+  "cancelled_at",
+  "cancelled_by",
+  "checked_in_at",
+  "checked_in_by",
+  "checked_out_at",
+  "checked_out_by",
+  "checkout_override_reason",
+  "created_by",
+];
 
 function reservationsQuery(detailed = false) {
   const guestSelection = detailed
@@ -44,6 +80,19 @@ function reservationsQuery(detailed = false) {
 
 function normalizeSearchValue(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function roundCurrency(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
+function pickReservationColumns(payload) {
+  return RESERVATION_COLUMNS.reduce((record, key) => {
+    if (payload[key] !== undefined) {
+      record[key] = payload[key];
+    }
+    return record;
+  }, {});
 }
 
 function computeDownpaymentStatus(record) {
@@ -238,12 +287,16 @@ function validateDownpaymentFields(payload) {
     throw new Error("Downpayment cannot exceed the reservation total.");
   }
 
-  if (payload.downpayment_required && downpaymentAmount <= 0) {
-    throw new Error("A required downpayment must be greater than zero.");
+  if (downpaymentAmount <= 0) {
+    throw new Error("Required downpayment must be greater than zero.");
   }
 
-  if (downpaymentPaid > 0 && !payload.payment_method) {
-    throw new Error("Payment method is required when recording a downpayment.");
+  if (downpaymentPaid <= 0) {
+    throw new Error("Downpayment paid must be greater than zero.");
+  }
+
+  if (downpaymentPaid < downpaymentAmount && payload.status === "Confirmed") {
+    throw new Error("Reservation cannot be confirmed until the required downpayment is fully paid.");
   }
 }
 
@@ -265,29 +318,40 @@ async function validateDoubleBooking(payload) {
 }
 
 function normalizeReservationPayload(payload, calc) {
-  const totalAmount = Number(calc.total || 0);
-  const downpaymentRequired = payload.downpayment_required === true || payload.downpayment_required === "true" || payload.downpayment_required === "on";
-  const downpaymentAmount = parseNumber(payload.downpayment_amount, 0);
-  const downpaymentPaid = parseNumber(payload.downpayment_paid, 0);
+  const totalAmount = roundCurrency(calc.total || 0);
+  const downpaymentRequired = true;
+  const fallbackDownpaymentAmount = roundCurrency(totalAmount * DEFAULT_DOWNPAYMENT_RATE);
+  const downpaymentAmount = roundCurrency(parseNumber(payload.downpayment_amount, fallbackDownpaymentAmount) || fallbackDownpaymentAmount);
+  const downpaymentPaid = roundCurrency(parseNumber(payload.downpayment_paid, 0));
+  const paymentStatus = downpaymentPaid >= totalAmount && totalAmount > 0
+    ? "Paid"
+    : downpaymentPaid > 0
+      ? "Partial"
+      : "Unpaid";
+  const reservationStatus = payload.status
+    || (downpaymentPaid >= downpaymentAmount && downpaymentAmount > 0 ? "Confirmed" : "Pending");
+  const downpaymentStatus = downpaymentPaid >= downpaymentAmount && downpaymentAmount > 0
+    ? "Paid"
+    : downpaymentPaid > 0
+      ? "Partially Paid"
+      : "Required";
 
   return {
     ...payload,
     guest_id: Number(payload.guest_id),
     room_id: Number(payload.room_id),
-    room_type_id: Number(payload.room_type_id),
     adults: Number(payload.adults),
     children: Number(payload.children || 0),
     total_amount: totalAmount,
     downpayment_required: downpaymentRequired,
     downpayment_amount: downpaymentAmount,
     downpayment_paid: downpaymentPaid,
-    downpayment_status: downpaymentRequired
-      ? (downpaymentPaid >= downpaymentAmount && downpaymentAmount > 0 ? "Paid" : downpaymentPaid > 0 ? "Partially Paid" : "Required")
-      : "Not Required",
-    incidental_deposit_amount: parseNumber(payload.incidental_deposit_amount, 0),
-    incidental_deposit_paid: parseNumber(payload.incidental_deposit_paid, 0),
+    downpayment_status: downpaymentStatus,
+    incidental_deposit_amount: roundCurrency(parseNumber(payload.incidental_deposit_amount, 0)),
+    incidental_deposit_paid: roundCurrency(parseNumber(payload.incidental_deposit_paid, 0)),
     guest_verified: payload.guest_verified === true || payload.guest_verified === "true" || payload.guest_verified === "on",
-    payment_status: payload.payment_status || (downpaymentPaid > 0 ? "Partial" : "Unpaid"),
+    payment_status: payload.payment_status || paymentStatus,
+    status: reservationStatus,
   };
 }
 
@@ -316,7 +380,7 @@ export async function saveReservation(payload) {
   validateDownpaymentFields(record);
   await validateDoubleBooking(record);
 
-  const upsertRecord = { ...record };
+  const upsertRecord = pickReservationColumns(record);
   if (!upsertRecord.id) {
     delete upsertRecord.id;
   } else {

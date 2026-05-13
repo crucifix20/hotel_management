@@ -1,9 +1,9 @@
-import { DOWNPAYMENT_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES, RESERVATION_STATUSES, ROLES } from "../config.js";
+import { DEFAULT_DOWNPAYMENT_RATE, DOWNPAYMENT_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES, RESERVATION_STATUSES, ROLES } from "../config.js";
 import { initProtectedPage } from "../router.js";
 import { createAuditLog } from "../services/auditService.js";
 import { createInvoiceFromReservation, getCheckoutFolio, getReservationInvoice, saveInvoiceItem, savePayment } from "../services/billingService.js";
 import { listActiveMembershipsForGuest } from "../services/clubsService.js";
-import { listGuestOptions } from "../services/guestsService.js";
+import { findPotentialDuplicateGuests, listGuestOptions, saveGuest } from "../services/guestsService.js";
 import { saveHousekeepingTask } from "../services/housekeepingService.js";
 import { listReservations, getAvailableRooms, getReservation, saveReservation, updateReservationStatus, validateReservationCheckIn, validateReservationCheckOut } from "../services/reservationsService.js";
 import { listRooms, listRoomTypes } from "../services/roomsService.js";
@@ -17,22 +17,53 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   let roomTypes = [];
   let filters = { status: "", search: "" };
 
+  function roundCurrency(value) {
+    return Number(Number(value || 0).toFixed(2));
+  }
+
+  const TRANSACTION_TYPE_DOWNPAYMENT = "Reservation Downpayment";
+  const TRANSACTION_TYPE_CHECKIN = "Check-In Payment";
+  const TRANSACTION_TYPE_CHECKOUT = "Checkout Payment";
+  const TRANSACTION_TYPE_INCIDENTAL = "Incidental Deposit";
+
+  function computeRequiredDownpayment(totalAmount) {
+    return roundCurrency(Number(totalAmount || 0) * DEFAULT_DOWNPAYMENT_RATE);
+  }
+
+  function isValidEmail(value) {
+    if (!value) {
+      return true;
+    }
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim());
+  }
+
+  function buildGuestLabel(guest) {
+    const parts = [guest.full_name];
+    if (guest.email) {
+      parts.push(guest.email);
+    }
+    return parts.filter(Boolean).join(" · ");
+  }
+
   function getReservationActionMarkup(reservation) {
     const status = reservation.status;
     const canCheckIn = ["Pending", "Confirmed"].includes(status);
     const canCheckOut = status === "Checked In";
     const canCancel = !["Checked Out", "Cancelled", "No Show"].includes(status);
     const canEdit = !["Checked Out", "Cancelled", "No Show"].includes(status) || isAdmin;
+    const canAddPayment = ["Pending", "Confirmed", "Checked In"].includes(status);
 
     return `
       <div class="reservation-actions">
         <div class="reservation-links">
           <a class="link-action" href="booking-confirmation.html?id=${reservation.id}">Confirmation</a>
+          ${status === "Checked In" || status === "Checked Out" ? `<a class="link-action" href="guest-folio.html?id=${reservation.id}">Guest Folio</a>` : ""}
           ${status === "Checked Out" ? `<a class="link-action" href="checkout-receipt.html?id=${reservation.id}">Receipt</a>` : ""}
         </div>
         <div class="reservation-action-grid">
           ${canEdit ? `<button class="btn btn-ghost reservation-edit-button" data-id="${reservation.id}" type="button">Edit</button>` : ""}
           ${canCheckIn ? `<button class="btn btn-ghost reservation-checkin-button" data-id="${reservation.id}" type="button">Check In</button>` : ""}
+          ${canAddPayment ? `<button class="btn btn-ghost reservation-payment-button" data-id="${reservation.id}" type="button">Add Payment</button>` : ""}
           ${canCheckOut ? `<button class="btn btn-ghost reservation-checkout-button" data-id="${reservation.id}" type="button">Check Out</button>` : ""}
           ${canCancel ? `<button class="btn btn-danger reservation-cancel-button" data-id="${reservation.id}" type="button">Cancel</button>` : ""}
         </div>
@@ -181,105 +212,171 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
 
   function reservationFormMarkup(reservation = {}) {
     const roomTypeId = reservation.rooms?.room_types?.id || reservation.room_type_id || "";
+    const totalAmount = Number(reservation.total_amount || 0);
+    const downpaymentAmount = Number(reservation.downpayment_amount || computeRequiredDownpayment(totalAmount));
+    const paymentDate = reservation.created_at ? new Date(reservation.created_at).toISOString().slice(0, 10) : todayIso();
 
     return `
       <form id="reservation-form" class="form-stack">
         <input name="id" type="hidden" value="${reservation.id || ""}">
-        <div class="filter-row">
-          <div class="field">
-            <label for="guest_id">Guest</label>
-            <select id="guest_id" name="guest_id" required>${createOptionList(guestOptions, "id", "full_name", "Select guest")}</select>
-          </div>
-          <div class="field">
-            <label for="room_type_id">Room Type</label>
-            <select id="room_type_id" name="room_type_id" required>${createOptionList(roomTypes, "id", "name", "Select room type")}</select>
-          </div>
-        </div>
-        <div id="reservation-membership-panel" class="success-panel" style="display:none;"></div>
-        <div class="filter-row">
-          <div class="field">
-            <label for="check_in">Check-In Date</label>
-            <input id="check_in" name="check_in" type="date" value="${reservation.check_in?.slice(0, 10) || ""}" required>
-          </div>
-          <div class="field">
-            <label for="check_out">Check-Out Date</label>
-            <input id="check_out" name="check_out" type="date" value="${reservation.check_out?.slice(0, 10) || ""}" required>
-          </div>
-        </div>
-        <div class="filter-row">
-          <div class="field">
-            <label for="room_id">Available Room Number</label>
-            <select id="room_id" name="room_id" required>
-              <option value="">Select dates and room type first</option>
-            </select>
-            <p class="field-help" id="availability-help">Only available rooms for the selected stay period will appear here.</p>
-          </div>
-          <div class="field">
-            <label for="reservation-total-preview">Reservation Total</label>
-            <input id="reservation-total-preview" type="text" value="${reservation.total_amount ? formatCurrency(reservation.total_amount) : formatCurrency(0)}" readonly>
-          </div>
-        </div>
-        <div class="button-row" style="margin-top:-6px;">
-          <button class="btn btn-ghost" id="clear-room-filters-button" type="button">Clear Filters</button>
-        </div>
-        <div class="filter-row">
-          <div class="field">
-            <label for="adults">Adults</label>
-            <input id="adults" name="adults" type="number" min="1" value="${reservation.adults || 1}" required>
-          </div>
-          <div class="field">
-            <label for="children">Children</label>
-            <input id="children" name="children" type="number" min="0" value="${reservation.children || 0}">
-          </div>
-        </div>
-        <div class="filter-row">
-          <div class="field">
-            <label for="status">Reservation Status</label>
-            <select id="status" name="status">${buildSelectOptions(RESERVATION_STATUSES, "Select status")}</select>
-          </div>
-          <div class="field">
-            <label for="payment_status">Payment Status</label>
-            <select id="payment_status" name="payment_status">${buildSelectOptions(PAYMENT_STATUSES, "Select payment status")}</select>
-          </div>
-        </div>
         <section class="panel" style="padding:18px;">
-          <div class="panel-header"><div><h3 style="margin:0;">Downpayment</h3><p class="muted">Capture reservation deposits before arrival.</p></div></div>
-          <div class="checkbox-field">
-            <label class="checkbox-label"><input id="downpayment_required" name="downpayment_required" type="checkbox" ${reservation.downpayment_required ? "checked" : ""}> Require downpayment</label>
+          <div class="panel-header"><div><h3 style="margin:0;">Guest</h3><p class="muted">Select an existing guest or create one inline without leaving this form.</p></div></div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="guest_id">Existing Guest</label>
+              <select id="guest_id" name="guest_id" required>${createOptionList(guestOptions.map((guest) => ({ ...guest, label: buildGuestLabel(guest) })), "id", "label", "Select guest")}</select>
+            </div>
+            <div class="field">
+              <label>&nbsp;</label>
+              <button class="btn btn-ghost" id="toggle-new-guest-button" type="button">+ New Guest</button>
+            </div>
           </div>
+          <section id="new-guest-panel" class="panel" style="display:none; padding:18px; margin-top:12px; background:rgba(255,255,255,.72);">
+            <div class="panel-header"><div><h3 style="margin:0;">Create Guest</h3><p class="muted">The reservation form stays open while you add the guest profile.</p></div></div>
+            <div class="filter-row">
+              <div class="field">
+                <label for="new_guest_full_name">Full Name</label>
+                <input id="new_guest_full_name" name="new_guest_full_name" placeholder="Guest full name">
+              </div>
+              <div class="field">
+                <label for="new_guest_email">Email</label>
+                <input id="new_guest_email" name="new_guest_email" type="email" placeholder="guest@email.com">
+              </div>
+            </div>
+            <div class="filter-row">
+              <div class="field">
+                <label for="new_guest_phone">Phone</label>
+                <input id="new_guest_phone" name="new_guest_phone" placeholder="+63 9xx xxx xxxx">
+              </div>
+              <div class="field">
+                <label for="new_guest_address">Address</label>
+                <input id="new_guest_address" name="new_guest_address" placeholder="Mailing address">
+              </div>
+            </div>
+            <div class="filter-row">
+              <div class="field">
+                <label for="new_guest_preferences">Preferences</label>
+                <input id="new_guest_preferences" name="new_guest_preferences" placeholder="High floor, extra pillows">
+              </div>
+              <div class="field">
+                <label class="checkbox-label" style="margin-top:32px;"><input id="new_guest_vip_status" name="new_guest_vip_status" type="checkbox"> Mark as VIP guest</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="new_guest_notes">Notes</label>
+              <textarea id="new_guest_notes" name="new_guest_notes" placeholder="Guest notes"></textarea>
+            </div>
+            <div class="button-row">
+              <button class="btn btn-secondary" id="save-new-guest-button" type="button">Save Guest</button>
+              <button class="btn btn-ghost" id="cancel-new-guest-button" type="button">Cancel</button>
+            </div>
+          </section>
+        </section>
+        <div id="reservation-membership-panel" class="success-panel" style="display:none;"></div>
+        <section class="panel" style="padding:18px;">
+          <div class="panel-header"><div><h3 style="margin:0;">Stay Details</h3><p class="muted">Reservation status is driven automatically by required downpayment completion.</p></div></div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="check_in">Check-In Date</label>
+              <input id="check_in" name="check_in" type="date" value="${reservation.check_in?.slice(0, 10) || ""}" required>
+            </div>
+            <div class="field">
+              <label for="check_out">Check-Out Date</label>
+              <input id="check_out" name="check_out" type="date" value="${reservation.check_out?.slice(0, 10) || ""}" required>
+            </div>
+          </div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="adults">Adults</label>
+              <input id="adults" name="adults" type="number" min="1" value="${reservation.adults || 1}" required>
+            </div>
+            <div class="field">
+              <label for="children">Children</label>
+              <input id="children" name="children" type="number" min="0" value="${reservation.children || 0}">
+            </div>
+          </div>
+          <div class="success-panel" style="margin-top:8px;">
+            <strong>Expected reservation status:</strong>
+            <span id="reservation-status-preview">${reservation.status || "Pending"}</span>
+          </div>
+        </section>
+        <section class="panel" style="padding:18px;">
+          <div class="panel-header"><div><h3 style="margin:0;">Room Selection</h3><p class="muted">Only rooms available for the selected stay period and room type will appear.</p></div></div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="room_type_id">Room Type</label>
+              <select id="room_type_id" name="room_type_id" required>${createOptionList(roomTypes, "id", "name", "Select room type")}</select>
+            </div>
+            <div class="field">
+              <label for="room_id">Available Room Number</label>
+              <select id="room_id" name="room_id" required>
+                <option value="">Select dates and room type first</option>
+              </select>
+              <p class="field-help" id="availability-help">Only available rooms for the selected stay period will appear here.</p>
+            </div>
+          </div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="reservation-total-preview">Reservation Total</label>
+              <input id="reservation-total-preview" type="text" value="${formatCurrency(totalAmount)}" readonly>
+            </div>
+            <div class="field">
+              <label>&nbsp;</label>
+              <button class="btn btn-ghost" id="clear-room-filters-button" type="button">Clear Filters</button>
+            </div>
+          </div>
+        </section>
+        <section class="panel" style="padding:18px;">
+          <div class="panel-header"><div><h3 style="margin:0;">Required Downpayment</h3><p class="muted">Every booking requires a ${Math.round(DEFAULT_DOWNPAYMENT_RATE * 100)}% deposit before confirmation.</p></div></div>
+          <input id="downpayment_required" name="downpayment_required" type="hidden" value="true">
           <div class="filter-row">
             <div class="field">
               <label for="downpayment_amount">Required Downpayment</label>
-              <input id="downpayment_amount" name="downpayment_amount" type="number" min="0" step="0.01" value="${reservation.downpayment_amount || 0}">
+              <input id="downpayment_amount" name="downpayment_amount" type="number" min="0" step="0.01" value="${downpaymentAmount}" ${isAdmin ? "" : "readonly"}>
             </div>
             <div class="field">
               <label for="downpayment_paid">Downpayment Paid</label>
-              <input id="downpayment_paid" name="downpayment_paid" type="number" min="0" step="0.01" value="${reservation.downpayment_paid || 0}">
+              <input id="downpayment_paid" name="downpayment_paid" type="number" min="0.01" step="0.01" value="${reservation.downpayment_paid || downpaymentAmount}" required>
             </div>
           </div>
           <div class="filter-row">
             <div class="field">
-              <label for="downpayment_status">Downpayment Status</label>
-              <select id="downpayment_status" name="downpayment_status">${buildSelectOptions(DOWNPAYMENT_STATUSES, "Select status")}</select>
+              <label for="payment_method">Initial Payment Method</label>
+              <select id="payment_method" name="payment_method" required>${buildSelectOptions(PAYMENT_METHODS, "Select payment method")}</select>
             </div>
             <div class="field">
-              <label for="payment_method">Initial Payment Method</label>
-              <select id="payment_method" name="payment_method">${buildSelectOptions(PAYMENT_METHODS, "Select payment method")}</select>
+              <label for="payment_date">Payment Date</label>
+              <input id="payment_date" name="payment_date" type="date" value="${paymentDate}" required>
             </div>
           </div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="payment_reference">Payment Reference</label>
+              <input id="payment_reference" name="payment_reference" value="" placeholder="Card auth, bank ref, wallet ref">
+            </div>
+            <div class="field">
+              <label for="downpayment_status_preview">Downpayment Status</label>
+              <input id="downpayment_status_preview" type="text" value="${reservation.downpayment_status || "Required"}" readonly>
+            </div>
+          </div>
+          ${isAdmin ? `
+            <div class="field">
+              <label for="downpayment_override_reason">Admin Override Reason</label>
+              <textarea id="downpayment_override_reason" name="downpayment_override_reason" placeholder="Required only when changing the computed downpayment amount."></textarea>
+            </div>
+          ` : ""}
+        </section>
+        <section class="panel" style="padding:18px;">
+          <div class="panel-header"><div><h3 style="margin:0;">Requests and Notes</h3><p class="muted">Capture guest requests and internal front desk notes for the stay.</p></div></div>
           <div class="field">
-            <label for="payment_reference">Payment Reference</label>
-            <input id="payment_reference" name="payment_reference" value="${reservation.payment_reference || ""}" placeholder="Card auth, bank ref, wallet ref">
+            <label for="special_requests">Guest Requests</label>
+            <textarea id="special_requests" name="special_requests">${reservation.special_requests || ""}</textarea>
+          </div>
+          <div class="field">
+            <label for="internal_notes">Internal Staff Notes</label>
+            <textarea id="internal_notes" name="internal_notes">${reservation.internal_notes || ""}</textarea>
           </div>
         </section>
-        <div class="field">
-          <label for="special_requests">Guest Requests</label>
-          <textarea id="special_requests" name="special_requests">${reservation.special_requests || ""}</textarea>
-        </div>
-        <div class="field">
-          <label for="internal_notes">Internal Staff Notes</label>
-          <textarea id="internal_notes" name="internal_notes">${reservation.internal_notes || ""}</textarea>
-        </div>
         ${isAdmin ? `
           <div class="field">
             <label for="admin_notes">Admin Notes</label>
@@ -298,14 +395,35 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       room_type_id: String(reservation.rooms?.room_types?.id || reservation.room_type_id || ""),
     };
     const currentRoom = reservation.rooms ? { id: reservation.rooms.id || reservation.room_id, room_number: reservation.rooms.room_number } : null;
+    const initialTotal = Number(reservation.total_amount || 0);
+    const defaultDownpayment = computeRequiredDownpayment(initialTotal);
     let selectedAvailableRooms = [];
 
     qs("#guest_id").value = reservation.guest_id || "";
     qs("#room_type_id").value = originalDates.room_type_id;
-    qs("#status").value = reservation.status || "Pending";
-    qs("#payment_status").value = reservation.payment_status || "Unpaid";
-    qs("#downpayment_status").value = reservation.downpayment_status || (reservation.downpayment_required ? "Required" : "Not Required");
-    qs("#payment_method").value = reservation.payment_method || "";
+    qs("#payment_method").value = PAYMENT_METHODS.includes(reservation.payment_method) ? reservation.payment_method : "";
+    qs("#downpayment_amount").value = reservation.downpayment_amount || defaultDownpayment || 0;
+    qs("#downpayment_paid").value = reservation.downpayment_paid || defaultDownpayment || 0;
+
+    function setNewGuestPanelVisible(visible) {
+      qs("#new-guest-panel").style.display = visible ? "block" : "none";
+      qs("#toggle-new-guest-button").textContent = visible ? "Hide New Guest" : "+ New Guest";
+    }
+
+    function clearNewGuestFields() {
+      ["new_guest_full_name", "new_guest_email", "new_guest_phone", "new_guest_address", "new_guest_preferences", "new_guest_notes"].forEach((id) => {
+        qs(`#${id}`).value = "";
+      });
+      qs("#new_guest_vip_status").checked = false;
+    }
+
+    function updateStatusPreview() {
+      const required = Number(qs("#downpayment_amount").value || 0);
+      const paid = Number(qs("#downpayment_paid").value || 0);
+      const isPaid = required > 0 && paid >= required;
+      qs("#reservation-status-preview").textContent = isPaid ? "Confirmed" : "Pending";
+      qs("#downpayment_status_preview").value = isPaid ? "Paid" : paid > 0 ? "Partially Paid" : "Required";
+    }
 
     async function updateMembershipPanel() {
       const guestId = qs("#guest_id").value;
@@ -400,11 +518,22 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
 
       if (!roomId || !room || !checkIn || !checkOut || checkOut <= checkIn) {
         qs("#reservation-total-preview").value = formatCurrency(0);
+        qs("#downpayment_amount").value = 0;
+        updateStatusPreview();
         return;
       }
 
       const nights = Math.max(1, Math.ceil((new Date(checkOut) - new Date(checkIn)) / 86400000));
-      qs("#reservation-total-preview").value = formatCurrency(Number(room.rate || 0) * nights);
+      const total = roundCurrency(Number(room.rate || 0) * nights);
+      const computedDownpayment = computeRequiredDownpayment(total);
+      qs("#reservation-total-preview").value = formatCurrency(total);
+      if (!reservation.id || !Number(reservation.downpayment_amount || 0) || Number(qs("#downpayment_amount").value || 0) === defaultDownpayment) {
+        qs("#downpayment_amount").value = computedDownpayment;
+      }
+      if (!reservation.id && !Number(qs("#downpayment_paid").value || 0)) {
+        qs("#downpayment_paid").value = computedDownpayment;
+      }
+      updateStatusPreview();
     }
 
     qs("#guest_id").addEventListener("change", updateMembershipPanel);
@@ -412,6 +541,64 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     qs("#check_out").addEventListener("change", async () => { await refreshAvailableRooms(); await updateTotalPreview(); });
     qs("#room_type_id").addEventListener("change", async () => { await refreshAvailableRooms(); await updateTotalPreview(); });
     qs("#room_id").addEventListener("change", updateTotalPreview);
+    qs("#downpayment_paid").addEventListener("input", updateStatusPreview);
+    qs("#downpayment_amount").addEventListener("input", updateStatusPreview);
+
+    qs("#toggle-new-guest-button").addEventListener("click", () => {
+      setNewGuestPanelVisible(qs("#new-guest-panel").style.display !== "block");
+    });
+    qs("#cancel-new-guest-button").addEventListener("click", () => {
+      clearNewGuestFields();
+      setNewGuestPanelVisible(false);
+    });
+
+    qs("#save-new-guest-button").addEventListener("click", async () => {
+      const newGuest = {
+        full_name: qs("#new_guest_full_name").value.trim(),
+        email: qs("#new_guest_email").value.trim() || null,
+        phone: qs("#new_guest_phone").value.trim() || null,
+        address: qs("#new_guest_address").value.trim() || null,
+        vip_status: qs("#new_guest_vip_status").checked,
+        preferences: qs("#new_guest_preferences").value.trim() || null,
+        notes: qs("#new_guest_notes").value.trim() || null,
+      };
+
+      try {
+        if (!newGuest.full_name) {
+          throw new Error("Guest full name is required.");
+        }
+        if (!isValidEmail(newGuest.email)) {
+          throw new Error("Enter a valid guest email address.");
+        }
+
+        const duplicates = await findPotentialDuplicateGuests({
+          email: newGuest.email,
+          phone: newGuest.phone,
+        });
+
+        if (duplicates.length) {
+          const proceed = await confirmDialog({
+            title: "Potential duplicate guest",
+            message: `A guest with the same email or phone already exists: ${duplicates.map((guest) => guest.full_name).join(", ")}. Continue creating this guest anyway?`,
+            confirmLabel: "Create Guest",
+          });
+          if (!proceed) {
+            return;
+          }
+        }
+
+        const savedGuest = await saveGuest(newGuest);
+        guestOptions = await listGuestOptions();
+        qs("#guest_id").innerHTML = createOptionList(guestOptions.map((guest) => ({ ...guest, label: buildGuestLabel(guest) })), "id", "label", "Select guest");
+        qs("#guest_id").value = String(savedGuest.id);
+        clearNewGuestFields();
+        setNewGuestPanelVisible(false);
+        await updateMembershipPanel();
+        showToast("Guest created and selected for this reservation.", "success");
+      } catch (error) {
+        showToast(friendlyError(error), "error");
+      }
+    });
 
     qs("#clear-room-filters-button").addEventListener("click", () => {
       qs("#check_in").value = "";
@@ -420,6 +607,9 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       qs("#room_id").innerHTML = `<option value="">Select dates and room type first</option>`;
       qs("#availability-help").textContent = "Only available rooms for the selected stay period will appear here.";
       qs("#reservation-total-preview").value = formatCurrency(0);
+      qs("#downpayment_amount").value = 0;
+      qs("#downpayment_paid").value = 0;
+      updateStatusPreview();
     });
 
     qs("#reservation-form").addEventListener("submit", async (event) => {
@@ -428,6 +618,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
         await withFormBusy(event.currentTarget, reservation.id ? "Saving..." : "Creating...", async () => {
           const payload = serializeForm(event.currentTarget);
           payload.created_by = auth.user.id;
+          payload.downpayment_required = true;
           if (!payload.id) {
             delete payload.id;
           }
@@ -435,6 +626,31 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           if (!payload.room_id) {
             throw new Error("Select an available room before saving the reservation.");
           }
+
+          const reservationTotal = Number(String(qs("#reservation-total-preview").value).replace(/[^\d.-]/g, "")) || 0;
+          const requiredDownpayment = roundCurrency(Number(payload.downpayment_amount || 0));
+          const downpaymentPaid = roundCurrency(Number(payload.downpayment_paid || 0));
+
+          if (requiredDownpayment <= 0) {
+            throw new Error("Required downpayment must be greater than zero.");
+          }
+          if (downpaymentPaid <= 0) {
+            throw new Error("Downpayment paid is required to save the reservation.");
+          }
+          if (downpaymentPaid > reservationTotal) {
+            throw new Error("Downpayment paid cannot exceed the reservation total.");
+          }
+          if (!payload.payment_method) {
+            throw new Error("Payment method is required when collecting downpayment.");
+          }
+
+          const computedDownpayment = computeRequiredDownpayment(reservationTotal);
+          if (isAdmin && requiredDownpayment !== computedDownpayment && !payload.downpayment_override_reason?.trim()) {
+            throw new Error("Admin override reason is required when changing the computed downpayment.");
+          }
+
+          payload.status = downpaymentPaid >= requiredDownpayment ? "Confirmed" : "Pending";
+          payload.payment_status = downpaymentPaid >= reservationTotal ? "Paid" : "Partial";
 
           const saved = await saveReservation(payload);
           const invoice = await createInvoiceFromReservation(saved);
@@ -450,8 +666,12 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
               payment_method: payload.payment_method,
               payment_reference: payload.payment_reference || null,
               payment_status: desiredDeposit >= Number(payload.downpayment_amount || 0) ? "Paid" : "Partial",
-              paid_at: new Date().toISOString(),
-              notes: "Reservation downpayment",
+              paid_at: payload.payment_date ? new Date(`${payload.payment_date}T12:00:00`).toISOString() : new Date().toISOString(),
+              notes: payload.downpayment_override_reason?.trim()
+                ? `Reservation downpayment override: ${payload.downpayment_override_reason.trim()}`
+                : "Reservation downpayment",
+              received_by: auth.user.id,
+              transaction_type: TRANSACTION_TYPE_DOWNPAYMENT,
             });
           }
 
@@ -460,7 +680,9 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
             action: reservation.id ? "Updated reservation" : "Created reservation",
             entityType: "reservations",
             entityId: saved.id,
-            details: `${saved.confirmation_number || saved.id} for ${saved.guests?.full_name || "guest"}`,
+            details: payload.downpayment_override_reason?.trim()
+              ? `${saved.confirmation_number || saved.id} for ${saved.guests?.full_name || "guest"} · downpayment override: ${payload.downpayment_override_reason.trim()}`
+              : `${saved.confirmation_number || saved.id} for ${saved.guests?.full_name || "guest"}`,
           });
 
           await load();
@@ -476,6 +698,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     await updateMembershipPanel();
     await refreshAvailableRooms();
     await updateTotalPreview();
+    updateStatusPreview();
   }
 
   function openReservationEditor(reservation = null) {
@@ -565,6 +788,25 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
               payment_status: "Paid",
               paid_at: new Date().toISOString(),
               notes: "Payment collected during check-in",
+              received_by: auth.user.id,
+              transaction_type: TRANSACTION_TYPE_CHECKIN,
+            });
+          }
+
+          if (incidentalDepositAmount > 0) {
+            if (!payload.incidental_payment_method) {
+              throw new Error("Deposit method is required when collecting incidental deposit.");
+            }
+            await savePayment({
+              invoice_id: invoice.id,
+              reservation_id: reservation.id,
+              amount: incidentalDepositAmount,
+              payment_method: payload.incidental_payment_method,
+              payment_status: "Paid",
+              paid_at: new Date().toISOString(),
+              notes: "Incidental deposit collected at check-in",
+              received_by: auth.user.id,
+              transaction_type: TRANSACTION_TYPE_INCIDENTAL,
             });
           }
 
@@ -603,6 +845,8 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   async function openCheckOutModal(id) {
     const reservation = await getReservation(id);
     await validateReservationCheckOut(reservation);
+    window.location.href = `guest-folio.html?id=${reservation.id}`;
+    return;
     const folio = await getCheckoutFolio(reservation.id) || await createInvoiceFromReservation(reservation).then(() => getCheckoutFolio(reservation.id));
     const isStaff = auth.profile.role === ROLES.STAFF;
 
@@ -747,6 +991,71 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     });
   }
 
+  async function openAddPaymentModal(id) {
+    const reservation = await getReservation(id);
+    const invoice = await createInvoiceFromReservation(reservation);
+    const folio = await getCheckoutFolio(reservation.id);
+
+    openModal({
+      title: `Add Payment · ${reservation.confirmation_number || `Reservation #${reservation.id}`}`,
+      body: `
+        <form id="reservation-payment-form" class="form-stack">
+          <section class="panel" style="padding:18px;">
+            <div class="detail-grid">
+              <dl class="detail-kv"><dt>Guest</dt><dd>${escapeHtml(reservation.guests?.full_name || "-")}</dd></dl>
+              <dl class="detail-kv"><dt>Confirmation</dt><dd>${escapeHtml(reservation.confirmation_number || `Reservation #${reservation.id}`)}</dd></dl>
+              <dl class="detail-kv"><dt>Room</dt><dd>${escapeHtml(reservation.rooms?.room_number || "-")}</dd></dl>
+              <dl class="detail-kv"><dt>Outstanding</dt><dd>${formatCurrency(folio?.outstandingBalance || 0)}</dd></dl>
+            </div>
+          </section>
+          <div class="filter-row">
+            <div class="field"><label for="payment_amount">Amount</label><input id="payment_amount" name="payment_amount" type="number" min="0.01" step="0.01" value="${folio?.outstandingBalance || 0}" required></div>
+            <div class="field"><label for="payment_method">Payment Method</label><select id="payment_method" name="payment_method" required>${buildSelectOptions(PAYMENT_METHODS, "Select payment method")}</select></div>
+          </div>
+          <div class="filter-row">
+            <div class="field"><label for="payment_reference">Payment Reference</label><input id="payment_reference" name="payment_reference"></div>
+            <div class="field"><label for="payment_date">Payment Date</label><input id="payment_date" name="payment_date" type="date" value="${todayIso()}" required></div>
+          </div>
+          <div class="field"><label for="payment_notes">Notes</label><textarea id="payment_notes" name="payment_notes" placeholder="Optional transaction note"></textarea></div>
+          <button class="btn btn-primary" type="submit">Post Payment</button>
+        </form>
+      `,
+    });
+
+    qs("#reservation-payment-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await withFormBusy(event.currentTarget, "Posting...", async () => {
+          const payload = serializeForm(event.currentTarget);
+          await savePayment({
+            invoice_id: invoice.id,
+            reservation_id: reservation.id,
+            amount: Number(payload.payment_amount || 0),
+            payment_method: payload.payment_method,
+            payment_reference: payload.payment_reference || null,
+            payment_status: "Paid",
+            paid_at: new Date(`${payload.payment_date}T12:00:00`).toISOString(),
+            notes: payload.payment_notes || "Reservation payment",
+            received_by: auth.user.id,
+            transaction_type: reservation.status === "Checked In" ? TRANSACTION_TYPE_CHECKOUT : TRANSACTION_TYPE_DOWNPAYMENT,
+          });
+          await createAuditLog({
+            userId: auth.user.id,
+            action: "Recorded reservation payment",
+            entityType: "payments",
+            entityId: reservation.id,
+            details: `${reservation.confirmation_number || reservation.id} payment recorded`,
+          });
+          closeModal();
+          await load();
+          showToast("Payment recorded successfully.", "success");
+        });
+      } catch (error) {
+        showToast(friendlyError(error), "error");
+      }
+    });
+  }
+
   function bindEvents(reservations) {
     qs("#add-reservation-button").addEventListener("click", () => openReservationEditor());
     qs("#reservation-filter-status").addEventListener("change", async (event) => {
@@ -774,6 +1083,14 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     root.querySelectorAll(".reservation-checkout-button").forEach((button) => button.addEventListener("click", async () => {
       try {
         await openCheckOutModal(Number(button.dataset.id));
+      } catch (error) {
+        showToast(friendlyError(error), "error");
+      }
+    }));
+
+    root.querySelectorAll(".reservation-payment-button").forEach((button) => button.addEventListener("click", async () => {
+      try {
+        await openAddPaymentModal(Number(button.dataset.id));
       } catch (error) {
         showToast(friendlyError(error), "error");
       }

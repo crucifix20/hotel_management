@@ -107,6 +107,39 @@ export async function saveGuest(payload) {
   return data;
 }
 
+export async function findPotentialDuplicateGuests({ email = "", phone = "", excludeId = null } = {}) {
+  const filters = [];
+  const normalizedEmail = String(email || "").trim();
+  const normalizedPhone = String(phone || "").trim();
+
+  if (normalizedEmail) {
+    filters.push(`email.eq.${normalizedEmail}`);
+  }
+  if (normalizedPhone) {
+    filters.push(`phone.eq.${normalizedPhone}`);
+  }
+  if (!filters.length) {
+    return [];
+  }
+
+  let query = supabase
+    .from("guests")
+    .select("id, full_name, email, phone")
+    .or(filters.join(","))
+    .order("full_name");
+
+  if (excludeId) {
+    query = query.neq("id", excludeId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
 export async function deleteGuest(id) {
   const { error } = await supabase.from("guests").delete().eq("id", id);
   if (error) {

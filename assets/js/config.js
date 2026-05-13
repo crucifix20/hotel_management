@@ -52,6 +52,18 @@ export const PAYMENT_METHODS = [
   "Online Payment",
 ];
 
+export const DEFAULT_DOWNPAYMENT_RATE = 0.30;
+
+export const PAYMENT_TRANSACTION_TYPES = [
+  "Reservation Downpayment",
+  "Check-In Payment",
+  "Checkout Payment",
+  "Service Charge Payment",
+  "Incidental Deposit",
+  "Refund",
+  "Adjustment",
+];
+
 export const SERVICE_ORDER_STATUSES = [
   "Requested",
   "In Progress",
@@ -107,11 +119,12 @@ export const NAV_ITEMS = [
   { key: "reservations", label: "Reservations", icon: "event_note", href: "reservations.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { key: "reservation-calendar", label: "Reservation Calendar", icon: "calendar_month", href: "reservation-calendar.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { key: "guests", label: "Guest Profiles", icon: "badge", href: "guests.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { key: "housekeeping", label: "Housekeeping", icon: "cleaning_services", href: "housekeeping.html", roles: [ROLES.ADMIN] },
+  { key: "housekeeping", label: "Housekeeping", icon: "cleaning_services", href: "housekeeping.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { key: "staff-accounting", label: "Accounting", icon: "receipt_long", href: "staff-accounting.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { key: "staff", label: "Staff Directory", icon: "groups", href: "staff.html", roles: [ROLES.ADMIN] },
   { key: "billing", label: "Accounting", icon: "analytics", href: "billing.html", roles: [ROLES.ADMIN] },
-  { key: "amenities", label: "Amenities & Services", icon: "room_service", href: "amenities.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { key: "clubs", label: "VIP Clubs", icon: "workspace_premium", href: "clubs.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { key: "amenities", label: "Amenities & Services", icon: "room_service", href: "amenities.html", roles: [ROLES.ADMIN] },
+  { key: "clubs", label: "VIP Clubs", icon: "workspace_premium", href: "clubs.html", roles: [ROLES.ADMIN] },
   { key: "reports", label: "Reports", icon: "assessment", href: "reports.html", roles: [ROLES.ADMIN] },
   { key: "settings", label: "Settings", icon: "settings", href: "settings.html", roles: [ROLES.ADMIN] },
 ];
@@ -124,14 +137,16 @@ export const PAGE_ACCESS = {
   "reservation-calendar": [ROLES.ADMIN, ROLES.STAFF],
   guests: [ROLES.ADMIN, ROLES.STAFF],
   "guest-details": [ROLES.ADMIN, ROLES.STAFF],
-  housekeeping: [ROLES.ADMIN],
+  housekeeping: [ROLES.ADMIN, ROLES.STAFF],
+  "staff-accounting": [ROLES.ADMIN, ROLES.STAFF],
   staff: [ROLES.ADMIN],
   billing: [ROLES.ADMIN],
-  amenities: [ROLES.ADMIN, ROLES.STAFF],
-  clubs: [ROLES.ADMIN, ROLES.STAFF],
+  amenities: [ROLES.ADMIN],
+  clubs: [ROLES.ADMIN],
   reports: [ROLES.ADMIN],
   settings: [ROLES.ADMIN],
   "booking-confirmation": [ROLES.ADMIN, ROLES.STAFF],
+  "guest-folio": [ROLES.ADMIN, ROLES.STAFF],
   "checkout-receipt": [ROLES.ADMIN, ROLES.STAFF],
 };
 
@@ -142,6 +157,7 @@ export const WIDE_PAGES = [
   "reservation-calendar",
   "guests",
   "housekeeping",
+  "staff-accounting",
   "billing",
   "clubs",
   "reports",
@@ -154,6 +170,7 @@ export const PAGE_META = {
   "reservation-calendar": { title: "Reservation Calendar", subtitle: "Seven-day occupancy view across room inventory." },
   guests: { title: "Guest Management", subtitle: "Profiles, stay history, preferences, and VIP relationship detail." },
   housekeeping: { title: "Housekeeping Operations", subtitle: "Tasks, assignments, priorities, and room turnaround." },
+  "staff-accounting": { title: "Staff Transaction Ledger", subtitle: "Front desk payment activity, transaction filters, and print-ready accounting records." },
   staff: { title: "Staff Management", subtitle: "Departments, shifts, directory information, and task coverage." },
   billing: { title: "Billing & Accounting", subtitle: "Invoices, payments, balances, and revenue performance." },
   amenities: { title: "Amenities & Services", subtitle: "Premium services, guest bookings, and ancillary revenue." },
@@ -161,6 +178,7 @@ export const PAGE_META = {
   reports: { title: "Reports", subtitle: "Executive hotel reporting, operational exports, and print-ready summaries." },
   settings: { title: "Settings", subtitle: "Hotel profile, tax defaults, room types, and access placeholders." },
   "booking-confirmation": { title: "Booking Confirmation", subtitle: "Print-ready booking summary for guest operations." },
+  "guest-folio": { title: "Guest Folio", subtitle: "Pre-checkout folio review, signatures, and settlement handoff." },
   "checkout-receipt": { title: "Checkout Receipt", subtitle: "Final stay folio, charges, payments, and settlement receipt." },
 };
 
