@@ -69,10 +69,13 @@ create table if not exists public.room_types (
   id bigserial primary key,
   name text not null unique,
   description text,
+  inclusions text,
   base_rate numeric(12, 2) not null default 0,
   capacity integer not null default 2,
   created_at timestamptz not null default now()
 );
+
+alter table public.room_types add column if not exists inclusions text;
 
 create table if not exists public.rooms (
   id bigserial primary key,

@@ -62,16 +62,16 @@ hotel-management-system/
 - Room inventory management, status updates, filters, and room detail view
 - Reservation creation, editing, availability-based room assignment, check-in, check-out, cancellation, calendar view, and overlap prevention
 - Reservation flow includes inline guest creation without leaving the reservation page
-- Reservation downpayment is always required and auto-calculated at `30%` of the stay total by `DEFAULT_DOWNPAYMENT_RATE`
+- Reservation guaranteed deposit is always required and defaults to one night's room rate
 - Guest creation, editing, stay history, VIP visibility, club visibility, amenity history, and invoice history
 - Housekeeping task management and room-status synchronization for Admin and Staff operational users
 - Staff directory management for Admin users
 - Billing with invoice creation, payment recording, downpayment support, outstanding balance visibility, and club revenue tracking
-- Staff Accounting / Transaction Ledger for staff-processed payments and printable cashier-style reporting
+- Cashier Closing ledger for staff-processed payments and printable cashier-style reporting
 - Amenities CRUD, hotel service catalogue management, service order posting, and invoice charge support
 - VIP clubs with clubs, benefits, registrations, transactions, benefit usage tracking, membership fee billing support, and service-order benefit application
 - Admin-only reports with filterable operational, financial, housekeeping, audit, and VIP summaries
-- Print-friendly booking confirmation, guest folio, staff ledger, and checkout receipt pages with browser print and save-as-PDF flow
+- Print-friendly booking confirmation, guest folio, cashier closing, and checkout receipt pages with browser print and save-as-PDF flow
 
 ## Role Model
 
@@ -151,7 +151,7 @@ The application is a premium hotel front-end operations suite for Grand Millado 
 - Reservations: working CRUD, confirmation links, total calculation, status changes, and double-booking validation.
 - Reservation Calendar: working seven-day HTML and JavaScript board without external calendar libraries.
 - Guests: working create and edit flow, history, VIP visibility, invoices, memberships, and amenity history.
-- Housekeeping: working Admin-only CRUD, assignment flow, priority and status tracking, and overdue visibility.
+- Housekeeping: working room-status board for manually setting rooms as clean, dirty, occupied, blocked, reserved, or out of service.
 - Staff: working Admin-only directory and department filtering.
 - Billing: working Admin-only invoice listing, invoice creation from reservations, payment recording, downpayment visibility, service-charge folios, and club revenue reporting.
 - Amenities and Services: working Admin-only amenity CRUD, hotel service catalogue management, amenity booking flow, service order workflow for checked-in guests, and invoice charge integration.
@@ -170,18 +170,18 @@ The application is a premium hotel front-end operations suite for Grand Millado 
 - Editing preserves the current room when the reservation still fits the current date and room-type selection.
 - The database also exposes `get_available_rooms(...)` so availability rules are enforced consistently.
 
-### Downpayment Workflow
+### Guaranteed Deposit Workflow
 
 - Reservations support:
   - `downpayment_required`
   - `downpayment_amount`
   - `downpayment_paid`
   - `downpayment_status`
-- Every reservation requires a downpayment.
-- Required downpayment defaults to `30%` of the reservation total through `DEFAULT_DOWNPAYMENT_RATE`.
-- Downpayment values are validated against the reservation total.
-- Initial downpayments are collected during reservation creation and stored in `payments`, not directly as payment-method fields on `reservations`.
-- Downpayment information appears in reservation financial summaries, billing, booking confirmation, and checkout folio views.
+- Every reservation requires a guaranteed deposit.
+- Required deposit defaults to one night's room rate.
+- Deposit values are validated against the reservation total.
+- Initial deposits are collected during reservation creation and stored in `payments`, not directly as payment-method fields on `reservations`.
+- Deposit information appears in reservation financial summaries, billing, booking confirmation, and checkout folio views.
 - Payment records store method, date, reference number, and notes.
 
 ### Reservation Search

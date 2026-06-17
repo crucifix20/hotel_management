@@ -1,8 +1,14 @@
 import { ROLES } from "../config.js";
 import { initProtectedPage } from "../router.js";
+import { createAuditLog } from "../services/auditService.js";
+import { listAmenities, saveAmenityBooking } from "../services/amenitiesService.js";
+import { addAmenityChargeToInvoice, getReservationInvoice } from "../services/billingService.js";
 import { getDashboardData } from "../services/dashboardService.js";
-import { createStatusBadge } from "../ui.js";
-import { formatCurrency, formatDate, formatDateTime, initials, render } from "../utils.js";
+import { listGuestOptions } from "../services/guestsService.js";
+import { listHotelServices, saveServiceOrder } from "../services/hotelServicesService.js";
+import { listReservations } from "../services/reservationsService.js";
+import { closeModal, createStatusBadge, openModal, showToast } from "../ui.js";
+import { buildSelectOptions, formatCurrency, formatDate, formatDateTime, friendlyError, initials, qs, render, serializeForm, todayIso, withFormBusy } from "../utils.js";
 
 function chartDay(label, height, current = false) {
   return `
@@ -67,6 +73,21 @@ await initProtectedPage("dashboard", async ({ root, auth }) => {
         </div>
       `}
     </section>
+
+    ${!isAdmin ? `
+      <section class="stitch-overview-card" style="margin-top:24px;">
+        <div class="stitch-overview-head">
+          <div>
+            <h2>Guest Service Desk</h2>
+            <p class="page-subtitle">Book amenities and in-stay services for active guests.</p>
+          </div>
+          <div class="stitch-pill-row">
+            <button class="btn btn-secondary" id="staff-book-service-button" type="button">Book Guest Service</button>
+            <button class="btn btn-primary" id="staff-book-amenity-button" type="button">Book Amenity</button>
+          </div>
+        </div>
+      </section>
+    ` : ""}
 
     <section class="stitch-kpi-grid">
       <article class="stitch-kpi-card">
@@ -201,4 +222,205 @@ await initProtectedPage("dashboard", async ({ root, auth }) => {
       </div>
     </section>
   `);
+
+  if (!isAdmin) {
+    bindStaffBookingActions(auth);
+  }
+
+  function bindStaffBookingActions(authContext) {
+    qs("#staff-book-amenity-button")?.addEventListener("click", openStaffAmenityBooking);
+    qs("#staff-book-service-button")?.addEventListener("click", openStaffServiceBooking);
+
+    async function openStaffAmenityBooking() {
+      try {
+        const [amenities, guests, reservations] = await Promise.all([
+          listAmenities(),
+          listGuestOptions(),
+          listReservations({}),
+        ]);
+        const activeAmenities = amenities.filter((amenity) => amenity.status === "Available");
+        const eligibleReservations = reservations.filter((reservation) => ["Confirmed", "Checked In"].includes(reservation.status));
+
+        openModal({
+          title: "Book Amenity",
+          body: `
+            <form id="staff-amenity-booking-form" class="form-stack">
+              <div class="filter-row">
+                <div class="field">
+                  <label for="amenity_id">Amenity</label>
+                  <select id="amenity_id" name="amenity_id" required>
+                    <option value="">Select amenity</option>
+                    ${activeAmenities.map((amenity) => `<option value="${amenity.id}">${amenity.name} - ${formatCurrency(amenity.price)}</option>`).join("")}
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="guest_id">Guest</label>
+                  <select id="guest_id" name="guest_id" required>
+                    <option value="">Select guest</option>
+                    ${guests.map((guest) => `<option value="${guest.id}">${guest.full_name}</option>`).join("")}
+                  </select>
+                </div>
+              </div>
+              <div class="filter-row">
+                <div class="field">
+                  <label for="reservation_id">Reservation</label>
+                  <select id="reservation_id" name="reservation_id">
+                    <option value="">No reservation selected</option>
+                    ${eligibleReservations.map((reservation) => `<option value="${reservation.id}">${reservation.confirmation_number || reservation.id} &middot; ${reservation.guests?.full_name || "Guest"} &middot; Room ${reservation.rooms?.room_number || "-"}</option>`).join("")}
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="booking_date">Booking Date</label>
+                  <input id="booking_date" name="booking_date" type="date" value="${todayIso()}" required>
+                </div>
+              </div>
+              <div class="filter-row">
+                <div class="field">
+                  <label for="quantity">Quantity</label>
+                  <input id="quantity" name="quantity" type="number" min="1" value="1" required>
+                </div>
+                <div class="field">
+                  <label for="status">Status</label>
+                  <select id="status" name="status">
+                    <option value="Booked">Booked</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+              </div>
+              <button class="btn btn-primary" type="submit">Save Amenity Booking</button>
+            </form>
+          `,
+        });
+
+        qs("#staff-amenity-booking-form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          try {
+            await withFormBusy(event.currentTarget, "Saving...", async () => {
+              const payload = serializeForm(event.currentTarget);
+              payload.amenity_id = Number(payload.amenity_id);
+              payload.guest_id = Number(payload.guest_id);
+              payload.reservation_id = payload.reservation_id ? Number(payload.reservation_id) : null;
+              payload.quantity = Number(payload.quantity);
+              const result = await saveAmenityBooking(payload);
+
+              if (payload.reservation_id) {
+                const invoice = await getReservationInvoice(payload.reservation_id);
+                if (invoice) {
+                  await addAmenityChargeToInvoice({
+                    invoiceId: invoice.id,
+                    amenityName: result.amenity.name,
+                    quantity: payload.quantity,
+                    amount: result.booking.total_amount,
+                  });
+                }
+              }
+
+              await createAuditLog({
+                userId: authContext.user.id,
+                action: "Booked amenity",
+                entityType: "amenity_bookings",
+                entityId: result.booking.id,
+                details: `${result.amenity.name} for ${result.booking.guests?.full_name || "guest"}`,
+              });
+              closeModal();
+              showToast("Amenity booking saved.", "success");
+            });
+          } catch (error) {
+            showToast(friendlyError(error), "error");
+          }
+        });
+      } catch (error) {
+        showToast(friendlyError(error), "error");
+      }
+    }
+
+    async function openStaffServiceBooking() {
+      try {
+        const [hotelServices, reservations] = await Promise.all([
+          listHotelServices({ status: "Available" }),
+          listReservations({}),
+        ]);
+        const activeReservations = reservations.filter((reservation) => reservation.status === "Checked In");
+
+        openModal({
+          title: "Book Guest Service",
+          body: `
+            <form id="staff-service-order-form" class="form-stack">
+              <div class="field">
+                <label for="reservation_id">Checked-In Guest</label>
+                <select id="reservation_id" name="reservation_id" required>
+                  <option value="">Select checked-in reservation</option>
+                  ${activeReservations.map((reservation) => `<option value="${reservation.id}" data-room-id="${reservation.room_id}" data-guest-id="${reservation.guest_id}">${reservation.confirmation_number || reservation.id} &middot; ${reservation.guests?.full_name || "Guest"} &middot; Room ${reservation.rooms?.room_number || "-"}</option>`).join("")}
+                </select>
+              </div>
+              <div class="filter-row">
+                <div class="field">
+                  <label for="service_id">Service From Catalogue</label>
+                  <select id="service_id" name="service_id" required>
+                    <option value="">Select available service</option>
+                    ${hotelServices.map((service) => `<option value="${service.id}" data-price="${service.price}">${service.name} - ${formatCurrency(service.price)}</option>`).join("")}
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="quantity">Quantity</label>
+                  <input id="quantity" name="quantity" type="number" min="1" value="1" required>
+                </div>
+              </div>
+              <div class="filter-row">
+                <div class="field">
+                  <label for="unit_price">Unit Price</label>
+                  <input id="unit_price" name="unit_price" type="number" min="0" step="0.01" value="0" required>
+                  <p class="field-help">Auto-filled from the service catalogue.</p>
+                </div>
+                <div class="field">
+                  <label for="status">Status</label>
+                  <select id="status" name="status">${buildSelectOptions(["Requested", "In Progress", "Completed", "Cancelled", "Charged"], "Select status")}</select>
+                </div>
+              </div>
+              <div class="field"><label for="notes">Notes</label><textarea id="notes" name="notes"></textarea></div>
+              <button class="btn btn-primary" type="submit">Save Guest Service</button>
+            </form>
+          `,
+        });
+
+        qs("#status").value = "Requested";
+        qs("#service_id").addEventListener("change", (event) => {
+          qs("#unit_price").value = event.target.selectedOptions[0]?.dataset.price || "0";
+        });
+
+        qs("#staff-service-order-form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          try {
+            await withFormBusy(event.currentTarget, "Saving...", async () => {
+              const payload = serializeForm(event.currentTarget);
+              const reservation = activeReservations.find((item) => item.id === Number(payload.reservation_id));
+              payload.reservation_id = Number(payload.reservation_id);
+              payload.guest_id = reservation.guest_id;
+              payload.room_id = reservation.room_id;
+              payload.service_id = Number(payload.service_id);
+              payload.quantity = Number(payload.quantity);
+              payload.unit_price = Number(payload.unit_price);
+              payload.created_by = authContext.user.id;
+              const order = await saveServiceOrder(payload);
+
+              await createAuditLog({
+                userId: authContext.user.id,
+                action: "Created service order",
+                entityType: "service_orders",
+                entityId: order.id,
+                details: `${order.hotel_services?.name || "Service"} for ${reservation.guests?.full_name || "guest"}`,
+              });
+              closeModal();
+              showToast("Guest service saved.", "success");
+            });
+          } catch (error) {
+            showToast(friendlyError(error), "error");
+          }
+        });
+      } catch (error) {
+        showToast(friendlyError(error), "error");
+      }
+    }
+  }
 });

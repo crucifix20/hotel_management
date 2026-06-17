@@ -25,12 +25,12 @@ await initProtectedPage("staff-accounting", async ({ root, auth }) => {
 
       render(root, `
         ${createPageHeader({
-          title: "Staff Transaction Ledger",
-          subtitle: isAdmin ? "Review front desk and cashier transactions across the operation." : "Review the transactions you personally processed at the front desk.",
-          actions: `<button class="btn btn-primary" id="print-ledger-button" type="button">Print Transaction Report</button>`,
+          title: "Cashier Closing",
+          subtitle: isAdmin ? "Review and print cashier closing documents across front desk transactions." : "Close your cashier by reviewing the transactions you personally processed.",
+          actions: `<button class="btn btn-primary" id="print-ledger-button" type="button">Print Cashier Closing Report</button>`,
         })}
         <section class="stitch-kpi-grid">
-          <article class="stitch-kpi-card"><h3>Total Transactions</h3><div class="stitch-kpi-value">${transactions.length}</div><p class="stitch-kpi-note">Matching the current ledger filters</p></article>
+          <article class="stitch-kpi-card"><h3>Total Transactions</h3><div class="stitch-kpi-value">${transactions.length}</div><p class="stitch-kpi-note">Matching the current closing filters</p></article>
           <article class="stitch-kpi-card"><h3>Total Collected</h3><div class="stitch-kpi-value">${formatCurrency(summary.totalCollected)}</div><p class="stitch-kpi-note">All visible staff transaction records</p></article>
           <article class="stitch-kpi-card"><h3>Prepared By</h3><div class="stitch-kpi-value" style="font-size:1.5rem;">${escapeHtml(auth.profile.full_name || "Front Desk")}</div><p class="stitch-kpi-note">${escapeHtml(isAdmin ? "Admin / Accounting View" : "Staff Ledger View")}</p></article>
         </section>
@@ -38,8 +38,8 @@ await initProtectedPage("staff-accounting", async ({ root, auth }) => {
         <section class="table-card staff-ledger-print">
           <div class="table-toolbar ledger-filters">
             <div>
-              <h2 class="font-display" style="margin:0 0 8px;">Ledger Filters</h2>
-              <p class="table-meta">Filter by date, transaction type, payment method, or guest/reference details.</p>
+              <h2 class="font-display" style="margin:0 0 8px;">Cashier Closing Filters</h2>
+              <p class="table-meta">Filter by shift date, transaction type, payment method, guest, confirmation, or receipt reference.</p>
             </div>
             <div class="filter-row" style="min-width:min(900px,100%);">
               <div class="field"><label for="ledger-date-from">Date From</label><input id="ledger-date-from" type="date" value="${filters.dateFrom}"></div>

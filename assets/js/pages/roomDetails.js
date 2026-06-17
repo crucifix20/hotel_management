@@ -59,6 +59,7 @@ await initProtectedPage("rooms", async ({ root }) => {
         <div><span>Floor</span><strong>${room.floor}</strong></div>
         <div><span>Capacity</span><strong>${room.room_types?.capacity || "-"}</strong></div>
         <div><span>Amenities</span><strong>${room.amenities || "-"}</strong></div>
+        <div><span>Inclusions</span><strong>${room.room_types?.inclusions || "-"}</strong></div>
         <div><span>Created</span><strong>${formatDate(room.created_at)}</strong></div>
       </div>
     </section>

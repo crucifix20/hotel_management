@@ -158,7 +158,7 @@ export function renderGuestFolioPage({ settings, reservation, folio, folioNumber
           </div>
           <div class="filter-row">
             <div class="field"><label for="payment_method">Payment Method</label><select id="payment_method" name="payment_method">${buildPaymentMethodOptions()}</select></div>
-            <div class="field"><label for="payment_date">Payment Date</label><input id="payment_date" name="payment_date" type="date" value="${new Date().toISOString().slice(0, 10)}" required></div>
+            <div class="field"><label>Payment Date</label><input type="text" value="Automatic on save" readonly></div>
           </div>
           <div class="filter-row">
             <div class="field"><label for="payment_reference">Payment Reference</label><input id="payment_reference" name="payment_reference"></div>
@@ -191,7 +191,6 @@ export async function settleGuestFolio({
   paymentAmount,
   paymentMethod,
   paymentReference,
-  paymentDate,
   paymentNotes,
   chargeDescription,
   chargeQuantity,
@@ -239,7 +238,7 @@ export async function settleGuestFolio({
       payment_method: paymentMethod,
       payment_reference: paymentReference || null,
       payment_status: "Paid",
-      paid_at: new Date(`${paymentDate}T12:00:00`).toISOString(),
+      paid_at: new Date().toISOString(),
       notes: paymentNotes || "Checkout settlement",
       received_by: userId,
       transaction_type: TRANSACTION_TYPE_CHECKOUT,

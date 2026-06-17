@@ -52,8 +52,6 @@ export const PAYMENT_METHODS = [
   "Online Payment",
 ];
 
-export const DEFAULT_DOWNPAYMENT_RATE = 0.30;
-
 export const PAYMENT_TRANSACTION_TYPES = [
   "Reservation Downpayment",
   "Check-In Payment",
@@ -120,7 +118,7 @@ export const NAV_ITEMS = [
   { key: "reservation-calendar", label: "Reservation Calendar", icon: "calendar_month", href: "reservation-calendar.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { key: "guests", label: "Guest Profiles", icon: "badge", href: "guests.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { key: "housekeeping", label: "Housekeeping", icon: "cleaning_services", href: "housekeeping.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { key: "staff-accounting", label: "Accounting", icon: "receipt_long", href: "staff-accounting.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { key: "staff-accounting", label: "Cashier Closing", icon: "receipt_long", href: "staff-accounting.html", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { key: "staff", label: "Staff Directory", icon: "groups", href: "staff.html", roles: [ROLES.ADMIN] },
   { key: "billing", label: "Accounting", icon: "analytics", href: "billing.html", roles: [ROLES.ADMIN] },
   { key: "amenities", label: "Amenities & Services", icon: "room_service", href: "amenities.html", roles: [ROLES.ADMIN] },
@@ -170,7 +168,7 @@ export const PAGE_META = {
   "reservation-calendar": { title: "Reservation Calendar", subtitle: "Seven-day occupancy view across room inventory." },
   guests: { title: "Guest Management", subtitle: "Profiles, stay history, preferences, and VIP relationship detail." },
   housekeeping: { title: "Housekeeping Operations", subtitle: "Tasks, assignments, priorities, and room turnaround." },
-  "staff-accounting": { title: "Staff Transaction Ledger", subtitle: "Front desk payment activity, transaction filters, and print-ready accounting records." },
+  "staff-accounting": { title: "Cashier Closing", subtitle: "Front desk payment activity, cashier closing filters, and print-ready accounting records." },
   staff: { title: "Staff Management", subtitle: "Departments, shifts, directory information, and task coverage." },
   billing: { title: "Billing & Accounting", subtitle: "Invoices, payments, balances, and revenue performance." },
   amenities: { title: "Amenities & Services", subtitle: "Premium services, guest bookings, and ancillary revenue." },

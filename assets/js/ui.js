@@ -486,6 +486,11 @@ export function renderBookingConfirmation({ reservation, invoice, payments, amen
   const roomType = room.room_types || {};
   const guest = reservation.guests || {};
   const creator = reservation.created_by_profile || {};
+  const specialRequests = String(reservation.special_requests || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const requestedServices = reservation.service_orders || [];
 
   const invoiceItems = [
     ...(invoice?.invoice_items || []),
@@ -534,8 +539,24 @@ export function renderBookingConfirmation({ reservation, invoice, payments, amen
             { label: "Check Out", value: escapeHtml(formatDate(reservation.check_out)) },
             { label: "Nights", value: escapeHtml(String(reservation.nights || "—")) },
             { label: "Adults / Children", value: escapeHtml(`${reservation.adults || 0} / ${reservation.children || 0}`) },
+            { label: "Inclusions", value: escapeHtml(roomType.inclusions || "None recorded.") },
           ])}
-          <p style="margin-top:18px;"><strong>Special Requests:</strong> ${escapeHtml(reservation.special_requests || "None recorded.")}</p>
+          <div class="print-special-requests">
+            <strong>Special Requests:</strong>
+            ${specialRequests.length ? `
+              <ul>
+                ${specialRequests.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
+              </ul>
+            ` : `<span>None recorded.</span>`}
+          </div>
+          <div class="print-special-requests">
+            <strong>Requested Services:</strong>
+            ${requestedServices.length ? `
+              <ul>
+                ${requestedServices.map((order) => `<li>${escapeHtml(order.hotel_services?.name || "Service")} ${order.notes ? `- ${escapeHtml(order.notes)}` : ""}</li>`).join("")}
+              </ul>
+            ` : `<span>None recorded.</span>`}
+          </div>
         </section>
         <section class="print-section">
           <h2>Billing Summary</h2>
@@ -571,7 +592,13 @@ export function renderBookingConfirmation({ reservation, invoice, payments, amen
         </section>
         <section class="print-section">
           <h2>Terms & Conditions</h2>
-          <p class="muted">All room, amenity, and VIP club charges are subject to Grand Millado Hotel policies and applicable taxes. Check-in is subject to identity verification and room availability at the confirmed arrival time. Cancellations, amendments, and refund processing follow the confirmed booking policy shared at the time of reservation.</p>
+          <ol class="muted print-terms-list">
+            <li>Check-in time is 2:00 PM and check-out time is 12:00 PM.</li>
+            <li>The hotel is not liable for lost, misplaced, or unattended guest items.</li>
+            <li>Room damages, missing items, or property losses caused during the stay will be charged to the guest.</li>
+            <li>All room, amenity, and VIP club charges are subject to Grand Millado Hotel policies and applicable taxes.</li>
+            <li>Cancellations, amendments, and refund processing follow the confirmed booking policy shared at the time of reservation.</li>
+          </ol>
           <div class="signature-line">Approved by Grand Millado Hotel Front Office</div>
         </section>
       </article>

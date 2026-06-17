@@ -1,10 +1,11 @@
-import { DEFAULT_DOWNPAYMENT_RATE, DOWNPAYMENT_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES, RESERVATION_STATUSES, ROLES } from "../config.js";
+import { DOWNPAYMENT_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES, RESERVATION_STATUSES, ROLES } from "../config.js";
 import { initProtectedPage } from "../router.js";
 import { createAuditLog } from "../services/auditService.js";
 import { createInvoiceFromReservation, getCheckoutFolio, getReservationInvoice, saveInvoiceItem, savePayment } from "../services/billingService.js";
 import { listActiveMembershipsForGuest } from "../services/clubsService.js";
 import { findPotentialDuplicateGuests, listGuestOptions, saveGuest } from "../services/guestsService.js";
 import { saveHousekeepingTask } from "../services/housekeepingService.js";
+import { listHotelServices, saveServiceOrder } from "../services/hotelServicesService.js";
 import { listReservations, getAvailableRooms, getReservation, saveReservation, updateReservationStatus, validateReservationCheckIn, validateReservationCheckOut } from "../services/reservationsService.js";
 import { listRooms, listRoomTypes } from "../services/roomsService.js";
 import { buildSelectOptions, createOptionList, debounce, escapeHtml, friendlyError, formatCurrency, formatDate, qs, render, serializeForm, todayIso, withFormBusy } from "../utils.js";
@@ -15,6 +16,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   let guestOptions = [];
   let roomOptions = [];
   let roomTypes = [];
+  let hotelServices = [];
   let filters = { status: "", search: "" };
 
   function roundCurrency(value) {
@@ -26,8 +28,40 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   const TRANSACTION_TYPE_CHECKOUT = "Checkout Payment";
   const TRANSACTION_TYPE_INCIDENTAL = "Incidental Deposit";
 
-  function computeRequiredDownpayment(totalAmount) {
-    return roundCurrency(Number(totalAmount || 0) * DEFAULT_DOWNPAYMENT_RATE);
+  function computeRequiredDownpayment(roomRate, totalAmount = 0) {
+    const oneNightRate = Number(roomRate || 0);
+    return roundCurrency(oneNightRate > 0 ? oneNightRate : Number(totalAmount || 0));
+  }
+
+  function addDaysIso(value, days) {
+    const date = value ? new Date(`${value}T00:00:00`) : new Date();
+    date.setDate(date.getDate() + days);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function currentTimeValue() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function validateStayDateTime() {
+    const checkIn = qs("#check_in").value;
+    const checkOut = qs("#check_out").value;
+    const checkInTime = qs("#check_in_time")?.value || "00:00";
+    const today = todayIso();
+
+    if (checkIn && checkIn < today) {
+      throw new Error("Check-in date cannot be in the past.");
+    }
+    if (checkOut && checkOut <= checkIn) {
+      throw new Error("Check-out date must be after the check-in date.");
+    }
+    if (checkIn === today && checkInTime && checkInTime < currentTimeValue()) {
+      throw new Error("Check-in time cannot be earlier than the current time.");
+    }
   }
 
   function isValidEmail(value) {
@@ -101,10 +135,11 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   }
 
   async function load() {
-    [guestOptions, roomOptions, roomTypes] = await Promise.all([
+    [guestOptions, roomOptions, roomTypes, hotelServices] = await Promise.all([
       listGuestOptions(),
       listRooms({}),
       listRoomTypes(),
+      listHotelServices({ status: "Available" }),
     ]);
 
     const reservations = await listReservations(filters);
@@ -210,11 +245,24 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     return options.join("");
   }
 
+  function createRoomTypeOptionMarkup(availability = new Map(), selectedValue = "") {
+    const options = [`<option value="">Select room type</option>`];
+    roomTypes.forEach((roomType) => {
+      const availableRooms = availability.get(Number(roomType.id));
+      const count = availableRooms?.length || 0;
+      if (availability.size > 0 && count === 0 && String(roomType.id) !== String(selectedValue)) {
+        return;
+      }
+      const countLabel = availability.size > 0 ? ` (${count} available)` : "";
+      options.push(`<option value="${roomType.id}">${escapeHtml(roomType.name)}${countLabel}</option>`);
+    });
+    return options.join("");
+  }
+
   function reservationFormMarkup(reservation = {}) {
     const roomTypeId = reservation.rooms?.room_types?.id || reservation.room_type_id || "";
     const totalAmount = Number(reservation.total_amount || 0);
-    const downpaymentAmount = Number(reservation.downpayment_amount || computeRequiredDownpayment(totalAmount));
-    const paymentDate = reservation.created_at ? new Date(reservation.created_at).toISOString().slice(0, 10) : todayIso();
+    const downpaymentAmount = Number(reservation.downpayment_amount || computeRequiredDownpayment(reservation.room_rate, totalAmount));
 
     return `
       <form id="reservation-form" class="form-stack">
@@ -278,11 +326,11 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           <div class="filter-row">
             <div class="field">
               <label for="check_in">Check-In Date</label>
-              <input id="check_in" name="check_in" type="date" value="${reservation.check_in?.slice(0, 10) || ""}" required>
+              <input id="check_in" name="check_in" type="date" min="${todayIso()}" value="${reservation.check_in?.slice(0, 10) || ""}" required>
             </div>
             <div class="field">
               <label for="check_out">Check-Out Date</label>
-              <input id="check_out" name="check_out" type="date" value="${reservation.check_out?.slice(0, 10) || ""}" required>
+              <input id="check_out" name="check_out" type="date" min="${addDaysIso(reservation.check_in?.slice(0, 10) || todayIso(), 1)}" value="${reservation.check_out?.slice(0, 10) || ""}" required>
             </div>
           </div>
           <div class="filter-row">
@@ -301,52 +349,103 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           </div>
         </section>
         <section class="panel" style="padding:18px;">
-          <div class="panel-header"><div><h3 style="margin:0;">Room Selection</h3><p class="muted">Only rooms available for the selected stay period and room type will appear.</p></div></div>
+          <div class="panel-header"><div><h3 style="margin:0;">Accommodation Details</h3><p class="muted">Room inclusions are loaded automatically from the selected room type.</p></div></div>
           <div class="filter-row">
             <div class="field">
-              <label for="room_type_id">Room Type</label>
-              <select id="room_type_id" name="room_type_id" required>${createOptionList(roomTypes, "id", "name", "Select room type")}</select>
+              <label for="check_in_time">Check-In Time</label>
+              <input id="check_in_time" name="check_in_time" type="time" value="14:00">
             </div>
             <div class="field">
-              <label for="room_id">Available Room Number</label>
-              <select id="room_id" name="room_id" required>
-                <option value="">Select dates and room type first</option>
-              </select>
-              <p class="field-help" id="availability-help">Only available rooms for the selected stay period will appear here.</p>
+              <label for="check_out_time">Check-Out Time</label>
+              <input id="check_out_time" name="check_out_time" type="time" value="12:00">
             </div>
           </div>
           <div class="filter-row">
             <div class="field">
-              <label for="reservation-total-preview">Reservation Total</label>
-              <input id="reservation-total-preview" type="text" value="${formatCurrency(totalAmount)}" readonly>
+              <label for="smoking_preference">Smoking Preference</label>
+              <select id="smoking_preference" name="smoking_preference">
+                <option value="">No preference</option>
+                <option value="Non-smoking room">Non-smoking room</option>
+                <option value="Smoking room">Smoking room</option>
+              </select>
             </div>
             <div class="field">
-              <label>&nbsp;</label>
-              <button class="btn btn-ghost" id="clear-room-filters-button" type="button">Clear Filters</button>
+              <label for="transportation_out">Transportation Out</label>
+              <select id="transportation_out" name="transportation_out">
+                <option value="">Not requested</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="room_type_inclusions">Room Inclusions</label>
+            <textarea id="room_type_inclusions" readonly placeholder="Select a room type to load inclusions."></textarea>
+          </div>
+        </section>
+        <section class="panel" style="padding:18px;">
+          <div class="panel-header"><div><h3 style="margin:0;">Services Requested</h3><p class="muted">Select services the guest requested. These are saved as service orders, not notes.</p></div></div>
+          <div class="list-grid" style="grid-template-columns:1fr;">
+            ${hotelServices.map((service) => `
+              <label class="checkbox-label">
+                <input class="reservation-service-checkbox" type="checkbox" value="${service.id}" data-price="${service.price || 0}" data-name="${escapeHtml(service.name)}">
+                ${escapeHtml(service.name)} ${Number(service.price || 0) > 0 ? `- ${formatCurrency(service.price)}` : ""}
+              </label>
+            `).join("") || `<p class="muted">No available services configured. Add services in Amenities & Services.</p>`}
+          </div>
+          <div class="field">
+            <label for="service_request_notes">Service Notes</label>
+            <textarea id="service_request_notes" name="service_request_notes" placeholder="Optional notes for selected services"></textarea>
+          </div>
+        </section>
+        <section class="panel" style="padding:18px;">
+          <div class="panel-header"><div><h3 style="margin:0;">Room Selection</h3><p class="muted">Only rooms available for the selected stay period and room type will appear.</p></div></div>
+          <div class="room-availability-layout">
+            <div class="room-availability-controls">
+              <div class="field">
+                <label for="room_type_id">Room Type</label>
+                <select id="room_type_id" name="room_type_id" required>${createRoomTypeOptionMarkup(new Map(), roomTypeId)}</select>
+              </div>
+              <div class="field">
+                <label for="room_id">Available Room Number</label>
+                <select id="room_id" name="room_id" required>
+                  <option value="">Select dates and room type first</option>
+                </select>
+                <p class="field-help" id="availability-help">Select check-in and check-out dates to see room type availability.</p>
+              </div>
+              <div class="field">
+                <label for="reservation-total-preview">Reservation Total</label>
+                <input id="reservation-total-preview" type="text" value="${formatCurrency(totalAmount)}" readonly>
+              </div>
+              <button class="btn btn-ghost" id="clear-room-filters-button" type="button">Clear Room Selection</button>
+            </div>
+            <div class="room-availability-summary" id="room-availability-summary">
+              <h4>Availability</h4>
+              <p>Select stay dates to check available rooms by type.</p>
             </div>
           </div>
         </section>
         <section class="panel" style="padding:18px;">
-          <div class="panel-header"><div><h3 style="margin:0;">Required Downpayment</h3><p class="muted">Every booking requires a ${Math.round(DEFAULT_DOWNPAYMENT_RATE * 100)}% deposit before confirmation.</p></div></div>
+          <div class="panel-header"><div><h3 style="margin:0;">Guaranteed Deposit</h3><p class="muted">The required guarantee is equal to one night's room rate before confirmation.</p></div></div>
           <input id="downpayment_required" name="downpayment_required" type="hidden" value="true">
           <div class="filter-row">
             <div class="field">
-              <label for="downpayment_amount">Required Downpayment</label>
+              <label for="downpayment_amount">Required Deposit</label>
               <input id="downpayment_amount" name="downpayment_amount" type="number" min="0" step="0.01" value="${downpaymentAmount}" ${isAdmin ? "" : "readonly"}>
             </div>
             <div class="field">
-              <label for="downpayment_paid">Downpayment Paid</label>
+              <label for="downpayment_paid">Deposit Paid</label>
               <input id="downpayment_paid" name="downpayment_paid" type="number" min="0.01" step="0.01" value="${reservation.downpayment_paid || downpaymentAmount}" required>
             </div>
           </div>
           <div class="filter-row">
             <div class="field">
-              <label for="payment_method">Initial Payment Method</label>
+              <label for="payment_method">Deposit Payment Method</label>
               <select id="payment_method" name="payment_method" required>${buildSelectOptions(PAYMENT_METHODS, "Select payment method")}</select>
             </div>
             <div class="field">
-              <label for="payment_date">Payment Date</label>
-              <input id="payment_date" name="payment_date" type="date" value="${paymentDate}" required>
+              <label>Payment Date</label>
+              <input type="text" value="Automatic on save" readonly>
             </div>
           </div>
           <div class="filter-row">
@@ -355,7 +454,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
               <input id="payment_reference" name="payment_reference" value="" placeholder="Card auth, bank ref, wallet ref">
             </div>
             <div class="field">
-              <label for="downpayment_status_preview">Downpayment Status</label>
+              <label for="downpayment_status_preview">Deposit Status</label>
               <input id="downpayment_status_preview" type="text" value="${reservation.downpayment_status || "Required"}" readonly>
             </div>
           </div>
@@ -367,10 +466,10 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           ` : ""}
         </section>
         <section class="panel" style="padding:18px;">
-          <div class="panel-header"><div><h3 style="margin:0;">Requests and Notes</h3><p class="muted">Capture guest requests and internal front desk notes for the stay.</p></div></div>
+          <div class="panel-header"><div><h3 style="margin:0;">Special Request</h3><p class="muted">Keep this short. Use service selection above for actual services like extra pillow or escort.</p></div></div>
           <div class="field">
-            <label for="special_requests">Guest Requests</label>
-            <textarea id="special_requests" name="special_requests">${reservation.special_requests || ""}</textarea>
+            <label for="special_requests">Special Request</label>
+            <textarea id="special_requests" name="special_requests" placeholder="Example: late arrival, room near elevator">${reservation.special_requests || ""}</textarea>
           </div>
           <div class="field">
             <label for="internal_notes">Internal Staff Notes</label>
@@ -396,12 +495,13 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     };
     const currentRoom = reservation.rooms ? { id: reservation.rooms.id || reservation.room_id, room_number: reservation.rooms.room_number } : null;
     const initialTotal = Number(reservation.total_amount || 0);
-    const defaultDownpayment = computeRequiredDownpayment(initialTotal);
+    const defaultDownpayment = computeRequiredDownpayment(reservation.room_rate, initialTotal);
     let selectedAvailableRooms = [];
+    let availableRoomsByType = new Map();
 
     qs("#guest_id").value = reservation.guest_id || "";
     qs("#room_type_id").value = originalDates.room_type_id;
-    qs("#payment_method").value = PAYMENT_METHODS.includes(reservation.payment_method) ? reservation.payment_method : "";
+    qs("#payment_method").value = PAYMENT_METHODS.includes(reservation.payment_method) ? reservation.payment_method : "Cash";
     qs("#downpayment_amount").value = reservation.downpayment_amount || defaultDownpayment || 0;
     qs("#downpayment_paid").value = reservation.downpayment_paid || defaultDownpayment || 0;
 
@@ -423,6 +523,118 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       const isPaid = required > 0 && paid >= required;
       qs("#reservation-status-preview").textContent = isPaid ? "Confirmed" : "Pending";
       qs("#downpayment_status_preview").value = isPaid ? "Paid" : paid > 0 ? "Partially Paid" : "Required";
+    }
+
+    function buildAccommodationRequestSummary() {
+      const rows = [
+        qs("#smoking_preference").value,
+        qs("#transportation_out").value ? `Transportation out: ${qs("#transportation_out").value}` : "",
+      ].filter(Boolean);
+
+      return rows.join("\n");
+    }
+
+    function syncRoomTypeInclusions() {
+      const roomType = roomTypes.find((item) => Number(item.id) === Number(qs("#room_type_id").value));
+      qs("#room_type_inclusions").value = roomType?.inclusions || "";
+    }
+
+    function selectedServiceRequests() {
+      return [...document.querySelectorAll(".reservation-service-checkbox:checked")].map((input) => {
+        const service = hotelServices.find((item) => Number(item.id) === Number(input.value));
+        return {
+          service,
+          service_id: Number(input.value),
+          unit_price: Number(input.dataset.price || service?.price || 0),
+        };
+      }).filter((item) => item.service);
+    }
+
+    function renderAvailabilitySummary() {
+      const summary = qs("#room-availability-summary");
+      if (!summary) {
+        return;
+      }
+
+      if (!availableRoomsByType.size) {
+        summary.innerHTML = `
+          <h4>Availability</h4>
+          <p>Select stay dates to check available rooms by type.</p>
+        `;
+        return;
+      }
+
+      const rows = roomTypes.map((roomType) => {
+        const rooms = availableRoomsByType.get(Number(roomType.id)) || [];
+        const isSelected = String(roomType.id) === String(qs("#room_type_id").value);
+        return `
+          <div class="room-availability-row${rooms.length ? " is-available" : " is-unavailable"}${isSelected ? " is-selected" : ""}">
+            <span>${escapeHtml(roomType.name)}</span>
+            <strong>${rooms.length}</strong>
+          </div>
+        `;
+      }).join("");
+
+      summary.innerHTML = `
+        <h4>Availability</h4>
+        <p>Room types with zero availability are disabled.</p>
+        <div class="room-availability-list">${rows}</div>
+      `;
+    }
+
+    async function refreshRoomTypeAvailability() {
+      const checkIn = qs("#check_in").value;
+      const checkOut = qs("#check_out").value;
+      const roomTypeSelect = qs("#room_type_id");
+      const selectedRoomType = roomTypeSelect.value;
+
+      if (!checkIn || !checkOut) {
+        availableRoomsByType = new Map();
+        roomTypeSelect.innerHTML = createRoomTypeOptionMarkup(availableRoomsByType, selectedRoomType);
+        roomTypeSelect.value = selectedRoomType;
+        renderAvailabilitySummary();
+        return;
+      }
+
+      const entries = await Promise.all(roomTypes.map(async (roomType) => {
+        const rooms = await getAvailableRooms({
+          checkIn,
+          checkOut,
+          roomTypeId: roomType.id,
+          excludeReservationId: reservation.id || null,
+        });
+        return [Number(roomType.id), rooms];
+      }));
+
+      availableRoomsByType = new Map(entries);
+      roomTypeSelect.innerHTML = createRoomTypeOptionMarkup(availableRoomsByType, selectedRoomType);
+
+      const selectedStillAvailable = availableRoomsByType.get(Number(selectedRoomType))?.length > 0;
+      const unchangedCurrentType = originalDates.room_type_id === selectedRoomType;
+      roomTypeSelect.value = selectedStillAvailable || unchangedCurrentType ? selectedRoomType : "";
+      renderAvailabilitySummary();
+    }
+
+    function updateDateConstraints() {
+      const checkIn = qs("#check_in").value;
+      const checkOut = qs("#check_out");
+      const checkInTime = qs("#check_in_time");
+      const minimumCheckout = addDaysIso(checkIn || todayIso(), 1);
+
+      qs("#check_in").min = todayIso();
+      checkOut.min = minimumCheckout;
+
+      if (checkOut.value && checkOut.value < minimumCheckout) {
+        checkOut.value = "";
+      }
+
+      if (checkInTime) {
+        if (checkIn === todayIso()) {
+          checkInTime.min = currentTimeValue();
+        } else {
+          checkInTime.removeAttribute("min");
+        }
+      }
     }
 
     async function updateMembershipPanel() {
@@ -467,7 +679,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
 
       if (!checkIn || !checkOut || !roomTypeId) {
         roomSelect.innerHTML = `<option value="">Select dates and room type first</option>`;
-        help.textContent = "Only available rooms for the selected stay period will appear here.";
+        help.textContent = checkIn && checkOut ? "Select an available room type first." : "Select check-in and check-out dates first.";
         return;
       }
 
@@ -476,7 +688,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       help.textContent = "Loading available rooms...";
 
       try {
-        selectedAvailableRooms = await getAvailableRooms({
+        selectedAvailableRooms = availableRoomsByType.get(Number(roomTypeId)) || await getAvailableRooms({
           checkIn,
           checkOut,
           roomTypeId,
@@ -493,7 +705,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
         );
 
         if (selectedAvailableRooms.length) {
-          help.textContent = `${selectedAvailableRooms.length} available room(s) found.`;
+          help.textContent = `${selectedAvailableRooms.length} available room(s) found for this room type.`;
         } else if (unchangedFilters && currentRoom) {
           help.textContent = "Current assigned room remains selectable for this reservation.";
         } else {
@@ -501,6 +713,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
         }
 
         roomSelect.value = unchangedFilters ? String(reservation.room_id || "") : "";
+        renderAvailabilitySummary();
       } catch (error) {
         roomSelect.innerHTML = `<option value="">Unable to check availability</option>`;
         help.textContent = friendlyError(error);
@@ -525,7 +738,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
 
       const nights = Math.max(1, Math.ceil((new Date(checkOut) - new Date(checkIn)) / 86400000));
       const total = roundCurrency(Number(room.rate || 0) * nights);
-      const computedDownpayment = computeRequiredDownpayment(total);
+      const computedDownpayment = computeRequiredDownpayment(room.rate, total);
       qs("#reservation-total-preview").value = formatCurrency(total);
       if (!reservation.id || !Number(reservation.downpayment_amount || 0) || Number(qs("#downpayment_amount").value || 0) === defaultDownpayment) {
         qs("#downpayment_amount").value = computedDownpayment;
@@ -537,9 +750,10 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     }
 
     qs("#guest_id").addEventListener("change", updateMembershipPanel);
-    qs("#check_in").addEventListener("change", async () => { await refreshAvailableRooms(); await updateTotalPreview(); });
-    qs("#check_out").addEventListener("change", async () => { await refreshAvailableRooms(); await updateTotalPreview(); });
-    qs("#room_type_id").addEventListener("change", async () => { await refreshAvailableRooms(); await updateTotalPreview(); });
+    qs("#check_in").addEventListener("change", async () => { updateDateConstraints(); await refreshRoomTypeAvailability(); await refreshAvailableRooms(); await updateTotalPreview(); });
+    qs("#check_out").addEventListener("change", async () => { updateDateConstraints(); await refreshRoomTypeAvailability(); await refreshAvailableRooms(); await updateTotalPreview(); });
+    qs("#check_in_time").addEventListener("change", updateDateConstraints);
+    qs("#room_type_id").addEventListener("change", async () => { syncRoomTypeInclusions(); renderAvailabilitySummary(); await refreshAvailableRooms(); await updateTotalPreview(); });
     qs("#room_id").addEventListener("change", updateTotalPreview);
     qs("#downpayment_paid").addEventListener("input", updateStatusPreview);
     qs("#downpayment_amount").addEventListener("input", updateStatusPreview);
@@ -606,6 +820,9 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       qs("#room_type_id").value = "";
       qs("#room_id").innerHTML = `<option value="">Select dates and room type first</option>`;
       qs("#availability-help").textContent = "Only available rooms for the selected stay period will appear here.";
+      availableRoomsByType = new Map();
+      qs("#room_type_id").innerHTML = createRoomTypeOptionMarkup(availableRoomsByType, "");
+      renderAvailabilitySummary();
       qs("#reservation-total-preview").value = formatCurrency(0);
       qs("#downpayment_amount").value = 0;
       qs("#downpayment_paid").value = 0;
@@ -619,6 +836,8 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           const payload = serializeForm(event.currentTarget);
           payload.created_by = auth.user.id;
           payload.downpayment_required = true;
+          const accommodationSummary = buildAccommodationRequestSummary();
+          payload.special_requests = [payload.special_requests, accommodationSummary].filter(Boolean).join("\n\n");
           if (!payload.id) {
             delete payload.id;
           }
@@ -626,6 +845,8 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           if (!payload.room_id) {
             throw new Error("Select an available room before saving the reservation.");
           }
+
+          validateStayDateTime();
 
           const reservationTotal = Number(String(qs("#reservation-total-preview").value).replace(/[^\d.-]/g, "")) || 0;
           const requiredDownpayment = roundCurrency(Number(payload.downpayment_amount || 0));
@@ -644,7 +865,9 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
             throw new Error("Payment method is required when collecting downpayment.");
           }
 
-          const computedDownpayment = computeRequiredDownpayment(reservationTotal);
+          const selectedRoom = roomOptions.find((item) => Number(item.id) === Number(payload.room_id))
+            || selectedAvailableRooms.find((item) => Number(item.id) === Number(payload.room_id));
+          const computedDownpayment = computeRequiredDownpayment(selectedRoom?.rate, reservationTotal);
           if (isAdmin && requiredDownpayment !== computedDownpayment && !payload.downpayment_override_reason?.trim()) {
             throw new Error("Admin override reason is required when changing the computed downpayment.");
           }
@@ -666,12 +889,35 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
               payment_method: payload.payment_method,
               payment_reference: payload.payment_reference || null,
               payment_status: desiredDeposit >= Number(payload.downpayment_amount || 0) ? "Paid" : "Partial",
-              paid_at: payload.payment_date ? new Date(`${payload.payment_date}T12:00:00`).toISOString() : new Date().toISOString(),
+              paid_at: new Date().toISOString(),
               notes: payload.downpayment_override_reason?.trim()
                 ? `Reservation downpayment override: ${payload.downpayment_override_reason.trim()}`
                 : "Reservation downpayment",
               received_by: auth.user.id,
               transaction_type: TRANSACTION_TYPE_DOWNPAYMENT,
+            });
+          }
+
+          const serviceNotes = qs("#service_request_notes")?.value.trim() || "";
+          const requests = selectedServiceRequests();
+          for (const request of requests) {
+            const order = await saveServiceOrder({
+              reservation_id: saved.id,
+              guest_id: saved.guest_id,
+              room_id: saved.room_id,
+              service_id: request.service_id,
+              quantity: 1,
+              unit_price: request.unit_price,
+              status: "Requested",
+              notes: serviceNotes || "Requested during reservation.",
+              created_by: auth.user.id,
+            });
+            await createAuditLog({
+              userId: auth.user.id,
+              action: "Created service order",
+              entityType: "service_orders",
+              entityId: order.id,
+              details: `${order.hotel_services?.name || "Service"} for ${saved.guests?.full_name || "guest"}`,
             });
           }
 
@@ -696,6 +942,9 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     });
 
     await updateMembershipPanel();
+    syncRoomTypeInclusions();
+    updateDateConstraints();
+    await refreshRoomTypeAvailability();
     await refreshAvailableRooms();
     await updateTotalPreview();
     updateStatusPreview();
@@ -742,9 +991,18 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
             <div class="field"><label for="check_in_notes">Check-In Notes</label><textarea id="check_in_notes" name="check_in_notes">${reservation.check_in_notes || ""}</textarea></div>
           </section>
           <section class="panel" style="padding:18px;">
+            <h3 style="margin-top:0;">Arrival Service Checklist</h3>
+            <div class="filter-row">
+              <label class="checkbox-label"><input name="handled_luggage" type="checkbox"> Luggage handled properly</label>
+              <label class="checkbox-label"><input name="escorted_to_room" type="checkbox"> Guest escorted to room</label>
+              <label class="checkbox-label"><input name="hotel_facilities_introduced" type="checkbox"> Hotel facilities introduced</label>
+              <label class="checkbox-label"><input name="room_facilities_explained" type="checkbox"> Room facilities explained</label>
+            </div>
+          </section>
+          <section class="panel" style="padding:18px;">
             <h3 style="margin-top:0;">Payment Verification</h3>
             <div class="detail-grid">
-              <dl class="detail-kv"><dt>Required Downpayment</dt><dd>${formatCurrency(reservation.downpayment_amount)}</dd></dl>
+              <dl class="detail-kv"><dt>Required Deposit</dt><dd>${formatCurrency(reservation.downpayment_amount)}</dd></dl>
               <dl class="detail-kv"><dt>Paid</dt><dd>${formatCurrency(reservation.downpayment_paid)}</dd></dl>
               <dl class="detail-kv"><dt>Remaining Required</dt><dd>${formatCurrency(remainingRequired)}</dd></dl>
             </div>
@@ -774,6 +1032,12 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           const paymentAmount = Number(payload.payment_amount || 0);
           const incidentalDepositAmount = Number(payload.incidental_deposit_amount || 0);
           const invoice = await createInvoiceFromReservation(reservation);
+          const arrivalChecklist = [
+            payload.handled_luggage ? "Luggage handled properly." : "",
+            payload.escorted_to_room ? "Guest escorted to room." : "",
+            payload.hotel_facilities_introduced ? "Hotel facilities introduced." : "",
+            payload.room_facilities_explained ? "Room facilities explained." : "",
+          ].filter(Boolean).join(" ");
 
           if (paymentAmount > 0) {
             if (!payload.payment_method) {
@@ -818,7 +1082,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
             guest_verified: true,
             guest_id_type: payload.guest_id_type || null,
             guest_id_number: payload.guest_id_number || null,
-            check_in_notes: payload.check_in_notes || null,
+            check_in_notes: [payload.check_in_notes, arrivalChecklist].filter(Boolean).join("\n") || null,
             checked_in_at: new Date().toISOString(),
             checked_in_by: auth.user.id,
             incidental_deposit_amount: incidentalDepositAmount,
@@ -1014,7 +1278,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           </div>
           <div class="filter-row">
             <div class="field"><label for="payment_reference">Payment Reference</label><input id="payment_reference" name="payment_reference"></div>
-            <div class="field"><label for="payment_date">Payment Date</label><input id="payment_date" name="payment_date" type="date" value="${todayIso()}" required></div>
+            <div class="field"><label>Payment Date</label><input type="text" value="Automatic on save" readonly></div>
           </div>
           <div class="field"><label for="payment_notes">Notes</label><textarea id="payment_notes" name="payment_notes" placeholder="Optional transaction note"></textarea></div>
           <button class="btn btn-primary" type="submit">Post Payment</button>
@@ -1034,7 +1298,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
             payment_method: payload.payment_method,
             payment_reference: payload.payment_reference || null,
             payment_status: "Paid",
-            paid_at: new Date(`${payload.payment_date}T12:00:00`).toISOString(),
+            paid_at: new Date().toISOString(),
             notes: payload.payment_notes || "Reservation payment",
             received_by: auth.user.id,
             transaction_type: reservation.status === "Checked In" ? TRANSACTION_TYPE_CHECKOUT : TRANSACTION_TYPE_DOWNPAYMENT,

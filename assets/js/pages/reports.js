@@ -255,7 +255,7 @@ await initProtectedPage("reports", async ({ root }) => {
       </section>
       ${tableSection({ id: "benefit-usage", title: "VIP Benefit Usage", subtitle: "Discounts and complimentary benefits applied to stays and services.", headers: ["Guest", "Club", "Benefit", "Discount", "Used At"], rows: benefitUsageRows, emptyCopy: "No club benefit usage matched the selected range." })}
       ${tableSection({ id: "housekeeping", title: "Housekeeping Report", subtitle: "Task status, assignment, and room readiness follow-up.", headers: ["Room", "Task", "Staff", "Status", "Priority", "Due"], rows: housekeepingRows, emptyCopy: "No housekeeping activity matched the selected filters." })}
-      ${tableSection({ id: "audit", title: "Audit Activity Report", subtitle: "Recent operational actions by user, role, and entity.", headers: ["User", "Role", "Action", "Entity Type", "Entity ID", "Date / Time", "Details"], rows: auditRows, emptyCopy: "No audit activity matched the selected range." })}
+      ${tableSection({ id: "audit", title: "Night Audit / Activity Report", subtitle: "Evidence of reservation, cashiering, checkout, room, and staff actions by user and time.", headers: ["User", "Role", "Action", "Entity Type", "Entity ID", "Date / Time", "Details"], rows: auditRows, emptyCopy: "No audit activity matched the selected range." })}
     `);
 
     document.getElementById("roomTypeId").value = filters.roomTypeId;

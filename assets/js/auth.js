@@ -115,7 +115,7 @@ export async function requireAuth() {
   const session = await getSession();
   if (!session?.user) {
     const next = encodeURIComponent(window.location.pathname.split("/").pop());
-    window.location.replace(`login.html?next=${next}`);
+    window.location.replace(`index.html?next=${next}`);
     return null;
   }
 

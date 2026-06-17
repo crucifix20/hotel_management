@@ -3,7 +3,7 @@ import { supabase } from "../supabaseClient.js";
 function roomsQuery() {
   return supabase
     .from("rooms")
-    .select("*, room_types(id, name, description, base_rate, capacity)");
+    .select("*, room_types(*)");
 }
 
 export async function listRoomTypes() {

@@ -87,34 +87,34 @@ await initProtectedPage("settings", async ({ root, auth }) => {
           </div>
           <button class="btn btn-secondary" id="add-room-type-button" type="button">Add Room Type</button>
         </div>
-        <div class="table-wrap">
-          <table class="stitch-overview-table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Base Rate</th>
-                <th>Capacity</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${roomTypes.map((roomType) => `
-                <tr>
-                  <td><strong>${roomType.name}</strong></td>
-                  <td>${roomType.description || "-"}</td>
-                  <td>${formatCurrency(roomType.base_rate)}</td>
-                  <td>${roomType.capacity}</td>
-                  <td>
-                    <div class="table-actions">
-                      <button class="btn btn-ghost room-type-edit-button" data-id="${roomType.id}" type="button">Edit</button>
-                      <button class="btn btn-danger room-type-delete-button" data-id="${roomType.id}" type="button">Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
+        <div class="room-type-register">
+          ${roomTypes.map((roomType) => `
+            <article class="room-type-card">
+              <div class="room-type-card-main">
+                <div class="room-type-title-row">
+                  <h3>${roomType.name}</h3>
+                  <div class="room-type-metrics">
+                    <span><strong>${formatCurrency(roomType.base_rate)}</strong> Base Rate</span>
+                    <span><strong>${roomType.capacity}</strong> Capacity</span>
+                  </div>
+                </div>
+                <div class="room-type-copy-grid">
+                  <div>
+                    <span class="room-type-label">Description</span>
+                    <p>${roomType.description || "No description recorded."}</p>
+                  </div>
+                  <div>
+                    <span class="room-type-label">Inclusions</span>
+                    <p>${roomType.inclusions || "No inclusions recorded."}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="room-type-actions">
+                <button class="btn btn-ghost room-type-edit-button" data-id="${roomType.id}" type="button">Edit</button>
+                <button class="btn btn-danger room-type-delete-button" data-id="${roomType.id}" type="button">Delete</button>
+              </div>
+            </article>
+          `).join("") || `<div class="empty-state"><h3 class="font-display">No room types configured</h3><p>Add a room type to define rates, capacity, and inclusions.</p></div>`}
         </div>
       </section>
     `);
@@ -150,6 +150,10 @@ await initProtectedPage("settings", async ({ root, auth }) => {
           <div class="field">
             <label for="description">Description</label>
             <textarea id="description" name="description">${roomType.description || ""}</textarea>
+          </div>
+          <div class="field">
+            <label for="inclusions">Inclusions</label>
+            <textarea id="inclusions" name="inclusions" placeholder="Complimentary breakfast, Wi-Fi, lounge access">${roomType.inclusions || ""}</textarea>
           </div>
           <div class="filter-row">
             <div class="field">

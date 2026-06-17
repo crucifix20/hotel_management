@@ -42,7 +42,6 @@ async function load() {
             paymentAmount: Number(payload.payment_amount || 0),
             paymentMethod: payload.payment_method,
             paymentReference: payload.payment_reference,
-            paymentDate: payload.payment_date,
             paymentNotes: payload.payment_notes,
             chargeDescription: payload.charge_description,
             chargeQuantity: Number(payload.charge_quantity || 0),

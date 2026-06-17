@@ -27,7 +27,7 @@ export async function initProtectedPage(pageKey, initPage) {
     logoutButton?.addEventListener("click", async () => {
       try {
         await signOut();
-        window.location.replace("login.html");
+        window.location.replace("index.html");
       } catch (error) {
         showToast(error.message || "Unable to sign out.", "error");
       }

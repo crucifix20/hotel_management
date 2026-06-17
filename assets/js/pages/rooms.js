@@ -100,6 +100,7 @@ await initProtectedPage("rooms", async ({ root, auth }) => {
                 <div class="stitch-mini-meta">
                   <span>${room.amenities || "No amenities listed"}</span>
                 </div>
+                <p class="muted" style="margin:10px 0 0;">${room.room_types?.inclusions || "No inclusions listed"}</p>
               </div>
               <div class="table-actions" style="margin-top:18px;">
                 <a class="link-action" href="room-details.html?id=${room.id}">View</a>

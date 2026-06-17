@@ -29,14 +29,18 @@ where not exists (
   where g.email = seed.email
 );
 
-insert into public.room_types (name, description, base_rate, capacity)
+insert into public.room_types (name, description, inclusions, base_rate, capacity)
 values
-  ('Deluxe King', 'Warm contemporary room with city views and premium bath amenities.', 285.00, 2),
-  ('Executive Twin', 'Business-focused room with executive lounge privileges.', 330.00, 2),
-  ('Premier Corner Suite', 'Spacious corner suite with dedicated living room and butler call.', 540.00, 3),
-  ('Spa Wellness Suite', 'Suite package with in-room wellness amenities and spa inclusions.', 620.00, 2),
-  ('Presidential Suite', 'Signature top-floor residence with formal lounge and private dining area.', 1200.00, 4)
-on conflict (name) do nothing;
+  ('Deluxe King', 'Warm contemporary room with city views and premium bath amenities.', 'Complimentary breakfast, bottled water, Wi-Fi', 285.00, 2),
+  ('Executive Twin', 'Business-focused room with executive lounge privileges.', 'Complimentary breakfast, lounge access, Wi-Fi', 330.00, 2),
+  ('Premier Corner Suite', 'Spacious corner suite with dedicated living room and butler call.', 'Complimentary breakfast, lounge access, welcome amenity, Wi-Fi', 540.00, 3),
+  ('Spa Wellness Suite', 'Suite package with in-room wellness amenities and spa inclusions.', 'Complimentary breakfast, spa access, wellness minibar, Wi-Fi', 620.00, 2),
+  ('Presidential Suite', 'Signature top-floor residence with formal lounge and private dining area.', 'Complimentary breakfast, butler service, lounge access, welcome amenity, Wi-Fi', 1200.00, 4)
+on conflict (name) do update set
+  description = excluded.description,
+  inclusions = excluded.inclusions,
+  base_rate = excluded.base_rate,
+  capacity = excluded.capacity;
 
 insert into public.rooms (room_number, floor, room_type_id, status, rate, amenities, notes)
 values
@@ -100,6 +104,21 @@ values
   ('Grand Millado Golf Access', 'Preferred green fee arrangement and caddie coordination.', 220.00, 'Available'),
   ('Sunset Yacht Excursion', 'Premium off-site yacht experience with concierge handling.', 680.00, 'Paused')
 on conflict (name) do nothing;
+
+insert into public.hotel_services (name, description, category, price, is_chargeable, status)
+select seed.name, seed.description, seed.category, seed.price, seed.is_chargeable, seed.status
+from (
+  values
+    ('Extra Pillow', 'Housekeeping request for an additional pillow.', 'Housekeeping', 0.00, false, 'Available'),
+    ('Guest Escort', 'Bell service escort from front desk to assigned room.', 'Other', 0.00, false, 'Available'),
+    ('Luggage Assistance', 'Bell service handling for guest luggage.', 'Other', 0.00, false, 'Available'),
+    ('Transportation Out', 'Arrange guest outbound transportation.', 'Transport', 0.00, false, 'Available')
+) as seed(name, description, category, price, is_chargeable, status)
+where not exists (
+  select 1
+  from public.hotel_services service
+  where service.name = seed.name
+);
 
 insert into public.clubs (name, description, membership_fee, benefits, status)
 values

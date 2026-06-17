@@ -1,5 +1,4 @@
-import { DEFAULT_DOWNPAYMENT_RATE } from "../config.js";
-import { addDays, differenceInNights, parseNumber, toIsoDate } from "../utils.js";
+import { addDays, differenceInNights, parseNumber, todayIso, toIsoDate } from "../utils.js";
 import { supabase } from "../supabaseClient.js";
 
 const BLOCKING_RESERVATION_STATUSES = ["Pending", "Confirmed", "Checked In"];
@@ -68,7 +67,7 @@ function reservationsQuery(detailed = false) {
   return supabase.from("reservations").select(`
     *,
     ${guestSelection},
-    rooms(id, room_number, status, floor, rate, room_types(id, name, base_rate, capacity)),
+    rooms(id, room_number, status, floor, rate, room_types(*)),
     ${serviceSelection},
     ${benefitUsageSelection},
     created_by_profile:users_profile!reservations_created_by_fkey(full_name, role),
@@ -320,7 +319,7 @@ async function validateDoubleBooking(payload) {
 function normalizeReservationPayload(payload, calc) {
   const totalAmount = roundCurrency(calc.total || 0);
   const downpaymentRequired = true;
-  const fallbackDownpaymentAmount = roundCurrency(totalAmount * DEFAULT_DOWNPAYMENT_RATE);
+  const fallbackDownpaymentAmount = roundCurrency(calc.rate || totalAmount);
   const downpaymentAmount = roundCurrency(parseNumber(payload.downpayment_amount, fallbackDownpaymentAmount) || fallbackDownpaymentAmount);
   const downpaymentPaid = roundCurrency(parseNumber(payload.downpayment_paid, 0));
   const paymentStatus = downpaymentPaid >= totalAmount && totalAmount > 0
@@ -370,6 +369,10 @@ export async function saveReservation(payload) {
 
   if (payload.check_out <= payload.check_in) {
     throw new Error("Check-out must be after check-in.");
+  }
+
+  if (payload.check_in < todayIso()) {
+    throw new Error("Check-in date cannot be in the past.");
   }
 
   const calc = await calculateReservationTotal(payload.room_id, payload.check_in, payload.check_out);
