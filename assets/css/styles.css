@@ -1672,6 +1672,18 @@ tbody tr:hover {
   min-height: 180px;
 }
 
+.booking-signatures {
+  margin-top: 42px;
+}
+
+.booking-signatures .signature-block {
+  min-height: 0;
+}
+
+.booking-signatures .signature-line {
+  margin-top: 0;
+}
+
 .ledger-summary-print {
   margin: 0 0 18px;
 }
@@ -3089,6 +3101,15 @@ tbody tr:hover {
     margin-top: 14px;
     padding-top: 6px;
     font-size: 7pt;
+  }
+
+  body[data-page="booking-confirmation"] .booking-signatures {
+    gap: 36px;
+    margin-top: 14px;
+  }
+
+  body[data-page="booking-confirmation"] .booking-signatures .signature-line {
+    margin-top: 0;
   }
 
   body[data-page="booking-confirmation"] .print-section:last-child {

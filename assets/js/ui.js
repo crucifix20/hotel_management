@@ -599,7 +599,20 @@ export function renderBookingConfirmation({ reservation, invoice, payments, amen
             <li>All room, amenity, and VIP club charges are subject to Grand Millado Hotel policies and applicable taxes.</li>
             <li>Cancellations, amendments, and refund processing follow the confirmed booking policy shared at the time of reservation.</li>
           </ol>
-          <div class="signature-line">Approved by Grand Millado Hotel Front Office</div>
+          <div class="signature-grid booking-signatures">
+            <div class="signature-block">
+              <div class="signature-line">
+                <strong>${escapeHtml(guest.full_name || "Guest")}</strong><br>
+                Guest Signature
+              </div>
+            </div>
+            <div class="signature-block">
+              <div class="signature-line">
+                <strong>${escapeHtml(creator.full_name || "Front Office")}</strong><br>
+                Staff Signature
+              </div>
+            </div>
+          </div>
         </section>
       </article>
     </div>
