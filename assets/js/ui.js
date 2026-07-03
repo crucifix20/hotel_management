@@ -4,14 +4,14 @@ import { escapeHtml, formatCurrency, formatDate, formatDateTime, getStoredSettin
 let modalRoot;
 let toastRoot;
 let confirmRoot;
-const SIDEBAR_STATE_KEY = "gmh_sidebar_state";
+const SIDEBAR_STATE_KEY = "tjs_sidebar_state";
 
 function ensureHeadAssets() {
-  if (!document.querySelector('link[data-gmh-icons="material-symbols"]')) {
+  if (!document.querySelector('link[data-tjs-icons="material-symbols"]')) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap";
-    link.dataset.gmhIcons = "material-symbols";
+    link.dataset.tjsIcons = "material-symbols";
     document.head.appendChild(link);
   }
 }

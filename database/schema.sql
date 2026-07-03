@@ -46,11 +46,13 @@ create table if not exists public.staff (
   department text,
   position text,
   shift text,
+  login_password text,
   status text not null default 'Active',
   created_at timestamptz not null default now()
 );
 
 alter table public.staff add column if not exists auth_user_id uuid unique references public.users_profile (id) on delete set null;
+alter table public.staff add column if not exists login_password text;
 alter table public.staff alter column department drop not null;
 
 create table if not exists public.guests (

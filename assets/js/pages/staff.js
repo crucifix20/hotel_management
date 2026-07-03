@@ -1,8 +1,8 @@
-import { createManagedStaffLogin, sendPasswordReset } from "../auth.js";
+import { createManagedStaffLogin } from "../auth.js";
 import { initProtectedPage } from "../router.js";
 import { createAuditLog } from "../services/auditService.js";
 import { deleteStaff, listStaff, saveStaff } from "../services/staffService.js";
-import { friendlyError, initials, qs, render, serializeForm, withFormBusy } from "../utils.js";
+import { escapeHtml, friendlyError, initials, qs, render, serializeForm, withFormBusy } from "../utils.js";
 import { closeModal, confirmDialog, createPageHeader, createStatusBadge, openModal, showToast } from "../ui.js";
 
 const STAFF_STATUSES = ["Active", "On Leave", "Inactive"];
@@ -84,12 +84,11 @@ await initProtectedPage("staff", async ({ root, auth }) => {
                   <div><span>Status</span>${createStatusBadge(member.status)}</div>
                   <div><span>Contact</span><strong>${member.email || member.phone || "No contact"}</strong></div>
                   <div><span>Login</span><strong>${member.auth_user_id ? "Enabled" : "Directory only"}</strong></div>
-                  <div><span>Password</span><strong>${member.auth_user_id ? "Protected" : "No login"}</strong></div>
+                  <div><span>Password</span><strong>${member.login_password ? escapeHtml(member.login_password) : "Not saved"}</strong></div>
                   <div><span>Tasks</span><strong>${(member.housekeeping_tasks || []).length} assigned</strong></div>
                 </div>
                 <div class="table-actions">
                   <button class="btn btn-ghost staff-edit-button" data-id="${member.id}" type="button">Edit</button>
-                  ${member.auth_user_id ? `<button class="btn btn-ghost staff-reset-password-button" data-id="${member.id}" type="button">Reset Password</button>` : ""}
                   <button class="btn btn-danger staff-delete-button" data-id="${member.id}" type="button">Delete</button>
                 </div>
               </article>
@@ -152,6 +151,11 @@ await initProtectedPage("staff", async ({ root, auth }) => {
             <select id="status" name="status"><option value="">Select status</option>${STAFF_STATUSES.map((status) => `<option value="${status}">${status}</option>`).join("")}<\/select>
           </div>
         </div>
+        <div class="field">
+          <label for="login_password">Display Password</label>
+          <input id="login_password" name="login_password" type="text" minlength="6" value="${escapeHtml(member.login_password || "")}" placeholder="Password shown in staff directory">
+          <p class="field-help">Saved on the staff record for display. Supabase Auth passwords cannot be read back after account creation.</p>
+        </div>
         ${member.auth_user_id ? `
           <div class="panel">
             <p class="eyebrow">Login Access</p>
@@ -171,16 +175,7 @@ await initProtectedPage("staff", async ({ root, auth }) => {
                 <span>Allow this staff member to log in</span>
               </label>
             </div>
-            <div class="field">
-              <label for="login_password">Login Password</label>
-              <div style="display:flex; gap:8px; align-items:center;">
-                <input id="login_password" name="login_password" type="password" minlength="6" placeholder="Minimum 6 characters">
-                <button class="btn btn-ghost" id="toggle-login-password" type="button" aria-controls="login_password" aria-pressed="false">
-                  <span class="material-symbols-outlined">visibility</span>
-                </button>
-              </div>
-              <p class="field-help">Uses the staff email above. The created account will receive the Staff role.</p>
-            </div>
+            <p class="field-help">Uses the display password above. The created account will receive the Staff role.</p>
           </div>
         `}
         <button class="btn btn-primary" type="submit">${member.id ? "Save Changes" : "Add Staff Member"}</button>
@@ -192,27 +187,15 @@ await initProtectedPage("staff", async ({ root, auth }) => {
     qs("#status").value = member.status || "Active";
     const loginToggle = qs("#create_login_access");
     const loginPasswordField = qs("#login_password");
-    const loginPasswordToggle = qs("#toggle-login-password");
 
     if (loginToggle && loginPasswordField) {
       const syncLoginFieldState = () => {
-        loginPasswordField.disabled = !loginToggle.checked;
         loginPasswordField.required = loginToggle.checked;
-        if (loginPasswordToggle) {
-          loginPasswordToggle.disabled = !loginToggle.checked;
-        }
       };
 
       syncLoginFieldState();
       loginToggle.addEventListener("change", syncLoginFieldState);
     }
-
-    loginPasswordToggle?.addEventListener("click", () => {
-      const isVisible = loginPasswordField.type === "text";
-      loginPasswordField.type = isVisible ? "password" : "text";
-      loginPasswordToggle.setAttribute("aria-pressed", String(!isVisible));
-      loginPasswordToggle.querySelector(".material-symbols-outlined").textContent = isVisible ? "visibility" : "visibility_off";
-    });
 
     qs("#staff-form").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -222,7 +205,6 @@ await initProtectedPage("staff", async ({ root, auth }) => {
           const createLoginAccess = payload.create_login_access === "on";
           const loginPassword = payload.login_password;
           delete payload.create_login_access;
-          delete payload.login_password;
           const loginRequested = createLoginAccess && !member.auth_user_id;
           if (member.auth_user_id) {
             payload.auth_user_id = member.auth_user_id;
@@ -285,36 +267,6 @@ await initProtectedPage("staff", async ({ root, auth }) => {
       const member = staffMembers.find((item) => item.id === Number(button.dataset.id));
       openModal({ title: `Edit ${member.full_name}`, body: staffFormMarkup(member) });
       bindStaffForm(member);
-    }));
-
-    root.querySelectorAll(".staff-reset-password-button").forEach((button) => button.addEventListener("click", async () => {
-      const member = staffMembers.find((item) => item.id === Number(button.dataset.id));
-      if (!member?.email) {
-        showToast("This staff member needs an email address before password reset can be sent.", "error");
-        return;
-      }
-
-      if (!await confirmDialog({
-        title: "Reset staff password",
-        message: `Send a password reset email to ${member.email}?`,
-        confirmLabel: "Send Reset",
-      })) {
-        return;
-      }
-
-      try {
-        await sendPasswordReset(member.email);
-        await createAuditLog({
-          userId: auth.user.id,
-          action: "Sent staff password reset",
-          entityType: "staff",
-          entityId: member.id,
-          details: member.email,
-        });
-        showToast("Password reset email sent.", "success");
-      } catch (error) {
-        showToast(friendlyError(error), "error");
-      }
     }));
 
     root.querySelectorAll(".staff-delete-button").forEach((button) => button.addEventListener("click", async () => {

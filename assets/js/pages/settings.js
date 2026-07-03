@@ -1,9 +1,9 @@
 import { initProtectedPage } from "../router.js";
 import { createAuditLog } from "../services/auditService.js";
 import { deleteRoomType, listRoomTypes, saveRoomType } from "../services/roomsService.js";
-import { deleteAllStaffTransactions } from "../services/staffAccountingService.js";
+import { deleteAllStaffTransactions } from "../services/staffService.js";
 import { closeModal, confirmDialog, createPageHeader, openModal, showToast } from "../ui.js";
-import { escapeHtml, friendlyError, formatCurrency, getStoredSettings, qs, render, saveStoredSettings, serializeForm, withFormBusy } from "../utils.js";
+import { friendlyError, formatCurrency, getStoredSettings, qs, render, saveStoredSettings, serializeForm, withFormBusy } from "../utils.js";
 
 await initProtectedPage("settings", async ({ root, auth }) => {
   async function load() {
@@ -13,12 +13,12 @@ await initProtectedPage("settings", async ({ root, auth }) => {
     render(root, `
       ${createPageHeader({
         title: "Settings",
-        subtitle: "Hotel profile defaults, tax configuration, room types, and role visibility controls.",
+        subtitle: "System profile defaults, tax configuration, room types, and role visibility controls.",
       })}
       <section class="stitch-kpi-grid">
         <article class="stitch-kpi-card">
           <div class="stitch-kpi-iconrow"><span class="stitch-kpi-tag">Brand</span></div>
-          <h3>Hotel Name</h3>
+          <h3>System Name</h3>
           <div class="stitch-kpi-value" style="font-size:1.8rem;">Grand Millado Hotel</div>
           <p class="stitch-kpi-note">Applied across dashboard, login, and print output</p>
         </article>
@@ -39,13 +39,13 @@ await initProtectedPage("settings", async ({ root, auth }) => {
         <div class="stitch-overview-card">
           <div class="stitch-overview-head">
             <div>
-              <h2>Hotel Profile</h2>
+              <h2>System Profile</h2>
               <p>Used for branding and booking confirmation output.</p>
             </div>
           </div>
           <form id="settings-form" class="form-stack">
             <div class="field">
-              <label for="hotelName">Hotel Name</label>
+              <label for="hotelName">System Name</label>
               <input id="hotelName" name="hotelName" value="${settings.hotelName}">
             </div>
             <div class="field">
@@ -80,46 +80,14 @@ await initProtectedPage("settings", async ({ root, auth }) => {
           </article>
         </aside>
       </section>
-      <section class="stitch-main-grid" style="margin-top:24px;">
-        <div class="stitch-overview-card">
-          <div class="stitch-overview-head">
-            <div>
-              <h2>Current User</h2>
-              <p>Signed-in account details for this session.</p>
-            </div>
+      <section class="stitch-overview-card" style="margin-top:24px;">
+        <div class="stitch-overview-head">
+          <div>
+            <h2>Staff Transaction Cleanup</h2>
+            <p>Remove payment ledger rows, service orders, and audit records created by Staff users.</p>
           </div>
-          <div class="detail-grid">
-            <dl class="detail-kv">
-              <dt>Name</dt>
-              <dd>${escapeHtml(auth.profile?.full_name || "Grand Millado User")}</dd>
-            </dl>
-            <dl class="detail-kv">
-              <dt>Email</dt>
-              <dd>${escapeHtml(auth.user?.email || "-")}</dd>
-            </dl>
-            <dl class="detail-kv">
-              <dt>Role</dt>
-              <dd>${escapeHtml(auth.profile?.role || "Staff")}</dd>
-            </dl>
-            <dl class="detail-kv">
-              <dt>Password</dt>
-              <dd>Password is protected by Supabase Auth and cannot be displayed after it is created.</dd>
-            </dl>
-          </div>
-        </div>
-        <aside class="stitch-arrivals-card">
-          <div class="stitch-section-head">
-            <div>
-              <h2>Staff Transactions</h2>
-              <p>Remove every cashier closing payment record created by staff users.</p>
-            </div>
-          </div>
-          <article class="timeline-item">
-            <strong>Delete All Staff Transactions</strong>
-            <p class="muted">Deletes payment records received by linked staff login accounts. This cannot be undone.</p>
-          </article>
           <button class="btn btn-danger" id="delete-staff-transactions-button" type="button">Delete All Staff Transactions</button>
-        </aside>
+        </div>
       </section>
       <section class="stitch-overview-card" style="margin-top:24px;">
         <div class="stitch-overview-head">
@@ -181,37 +149,27 @@ await initProtectedPage("settings", async ({ root, auth }) => {
       }
     });
 
-    qs("#delete-staff-transactions-button")?.addEventListener("click", async () => {
+    qs("#delete-staff-transactions-button").addEventListener("click", async () => {
       if (!await confirmDialog({
-        title: "Delete all staff transactions",
-        message: "This permanently deletes every payment transaction received by linked staff login accounts from the cashier closing ledger.",
+        title: "Delete staff transactions",
+        message: "This removes all payment transactions, service orders, and audit records made by Staff users. Staff accounts and staff directory records stay active.",
         confirmLabel: "Delete All",
         tone: "danger",
       })) {
         return;
       }
 
-      const button = qs("#delete-staff-transactions-button");
-      const originalLabel = button.textContent;
-      button.disabled = true;
-      button.textContent = "Deleting...";
-
       try {
-        const deletedCount = await deleteAllStaffTransactions();
+        const deleted = await deleteAllStaffTransactions();
         await createAuditLog({
           userId: auth.user.id,
-          action: "Deleted all staff transactions",
-          entityType: "payments",
-          details: `Deleted ${deletedCount} staff transaction records`,
+          action: "Deleted staff transactions",
+          entityType: "settings",
+          details: `Removed ${deleted.payments} payments, ${deleted.serviceOrders} service orders, and ${deleted.auditLogs} staff audit logs`,
         });
-        showToast(`${deletedCount} staff transaction record${deletedCount === 1 ? "" : "s"} deleted.`, "success");
+        showToast("Staff transactions deleted.", "success");
       } catch (error) {
         showToast(friendlyError(error), "error");
-      } finally {
-        if (document.body.contains(button)) {
-          button.disabled = false;
-          button.textContent = originalLabel;
-        }
       }
     });
 

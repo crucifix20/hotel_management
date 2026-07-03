@@ -48,3 +48,40 @@ export async function deleteStaff(id) {
     throw error;
   }
 }
+
+async function deleteRows(table, column, values) {
+  if (!values.length) {
+    return 0;
+  }
+
+  const { data, error } = await supabase
+    .from(table)
+    .delete()
+    .in(column, values)
+    .select("id");
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).length;
+}
+
+export async function deleteAllStaffTransactions() {
+  const { data: staffProfiles, error } = await supabase
+    .from("users_profile")
+    .select("id")
+    .eq("role", "Staff");
+
+  if (error) {
+    throw error;
+  }
+
+  const staffUserIds = (staffProfiles || []).map((profile) => profile.id);
+
+  return {
+    payments: await deleteRows("payments", "received_by", staffUserIds),
+    serviceOrders: await deleteRows("service_orders", "created_by", staffUserIds),
+    auditLogs: await deleteRows("audit_logs", "user_id", staffUserIds),
+  };
+}

@@ -11,7 +11,7 @@ function buildFallbackProfile(user, profile = {}) {
   const metadata = user?.user_metadata || {};
   return {
     id: user?.id || profile.id || null,
-    full_name: profile.full_name || metadata.full_name || user?.email?.split("@")[0] || "Grand Millado User",
+    full_name: profile.full_name || metadata.full_name || user?.email?.split("@")[0] || "Grand Millado Hotel User",
     role: normalizeRole(profile.role || metadata.role),
     avatar_url: profile.avatar_url || metadata.avatar_url || null,
     created_at: profile.created_at || null,
@@ -47,7 +47,7 @@ async function ensureProfile(user) {
   const metadata = user.user_metadata || {};
   const payload = {
     id: user.id,
-    full_name: metadata.full_name || user.email?.split("@")[0] || "Grand Millado User",
+    full_name: metadata.full_name || user.email?.split("@")[0] || "Grand Millado Hotel User",
     role: normalizeRole(metadata.role),
     avatar_url: metadata.avatar_url || null,
   };
@@ -159,7 +159,7 @@ export async function createManagedStaffLogin({ email, password, fullName }) {
     throw new Error("Staff login password must be at least 6 characters.");
   }
 
-  const signupClient = createTransientSupabaseClient(`gmh-staff-signup-${Date.now()}`);
+  const signupClient = createTransientSupabaseClient(`tjs-staff-signup-${Date.now()}`);
   const { data, error } = await signupClient.auth.signUp({
     email,
     password,
@@ -185,15 +185,4 @@ export async function createManagedStaffLogin({ email, password, fullName }) {
 
   await signupClient.auth.signOut();
   return data.user;
-}
-
-export async function sendPasswordReset(email) {
-  if (!email) {
-    throw new Error("An email address is required to send a password reset.");
-  }
-
-  const { error } = await supabase.auth.resetPasswordForEmail(email);
-  if (error) {
-    throw error;
-  }
 }

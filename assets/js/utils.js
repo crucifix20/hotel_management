@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from "./config.js";
 
-const LEGACY_HOTEL_ADDRESS = "1 Grand Millado Avenue, Makati Business District";
+const LEGACY_HOTEL_NAME = "The Journey Suite";
+const LEGACY_HOTEL_ADDRESS = "1 The Journey Suite Avenue, Makati Business District";
 
 export const qs = (selector, scope = document) => scope.querySelector(selector);
 export const qsa = (selector, scope = document) => [...scope.querySelectorAll(selector)];
@@ -129,6 +130,10 @@ export function getStoredSettings() {
     const parsed = JSON.parse(raw);
     const merged = { ...DEFAULT_SETTINGS, ...parsed };
 
+    if (!parsed.hotelName || parsed.hotelName === LEGACY_HOTEL_NAME) {
+      merged.hotelName = DEFAULT_SETTINGS.hotelName;
+    }
+
     if (!parsed.address || parsed.address === LEGACY_HOTEL_ADDRESS) {
       merged.address = DEFAULT_SETTINGS.address;
     }
@@ -162,7 +167,17 @@ export function friendlyError(error, fallback = "Something went wrong. Please tr
   if (!error) {
     return fallback;
   }
-  return error.message || error.error_description || fallback;
+
+  const message = error.message || error.error_description || error.msg || error.details;
+  if (message && message !== "{}") {
+    return message;
+  }
+
+  if (typeof error === "string" && error !== "{}") {
+    return error;
+  }
+
+  return fallback;
 }
 
 export async function withFormBusy(form, pendingLabel, callback) {

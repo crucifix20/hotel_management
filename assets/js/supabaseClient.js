@@ -9,7 +9,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-export function createTransientSupabaseClient(storageKey = `gmh-transient-${Date.now()}`) {
+export function createTransientSupabaseClient(storageKey = `tjs-transient-${Date.now()}`) {
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: false,

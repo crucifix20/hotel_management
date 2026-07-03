@@ -180,7 +180,7 @@ export const PAGE_META = {
   "checkout-receipt": { title: "Checkout Receipt", subtitle: "Final stay folio, charges, payments, and settlement receipt." },
 };
 
-export const SETTINGS_STORAGE_KEY = "gmh_settings";
+export const SETTINGS_STORAGE_KEY = "tjs_settings";
 export const DEFAULT_SETTINGS = {
   hotelName: APP_NAME,
   address: HOTEL_ADDRESS,
