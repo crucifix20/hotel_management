@@ -102,7 +102,7 @@ export function renderGuestFolioPage({ settings, reservation, folio, folioNumber
         </section>
 
         <section class="print-section">
-          <h2>Folio Totals</h2>
+          <h2>Billing Arrangement</h2>
           <div class="detail-grid">
             <dl class="detail-kv"><dt>Subtotal</dt><dd>${escapeHtml(formatCurrency(folio.invoice.subtotal || 0))}</dd></dl>
             <dl class="detail-kv"><dt>Tax</dt><dd>${escapeHtml(formatCurrency(folio.invoice.tax || 0))}</dd></dl>
