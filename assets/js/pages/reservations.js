@@ -27,10 +27,24 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   const TRANSACTION_TYPE_CHECKIN = "Check-In Payment";
   const TRANSACTION_TYPE_CHECKOUT = "Checkout Payment";
   const TRANSACTION_TYPE_INCIDENTAL = "Incidental Deposit";
+  const DEPOSIT_DISCOUNT_OPTIONS = [0, 5, 10, 15, 20, 25, 30];
 
-  function computeRequiredDownpayment(roomRate, totalAmount = 0) {
+  function computeRequiredDownpayment(roomRate, totalAmount = 0, discountPercent = 0) {
     const oneNightRate = Number(roomRate || 0);
-    return roundCurrency(oneNightRate > 0 ? oneNightRate : Number(totalAmount || 0));
+    const baseAmount = oneNightRate > 0 ? oneNightRate : Number(totalAmount || 0);
+    return roundCurrency(baseAmount * (1 - Number(discountPercent || 0) / 100));
+  }
+
+  function inferDepositDiscountPercent(baseAmount, discountedAmount) {
+    const base = Number(baseAmount || 0);
+    const discounted = Number(discountedAmount || 0);
+    if (base <= 0 || discounted <= 0) {
+      return 0;
+    }
+
+    return DEPOSIT_DISCOUNT_OPTIONS.find((percent) => {
+      return roundCurrency(base * (1 - percent / 100)) === roundCurrency(discounted);
+    }) || 0;
   }
 
   function addDaysIso(value, days) {
@@ -262,7 +276,9 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   function reservationFormMarkup(reservation = {}) {
     const roomTypeId = reservation.rooms?.room_types?.id || reservation.room_type_id || "";
     const totalAmount = Number(reservation.total_amount || 0);
-    const downpaymentAmount = Number(reservation.downpayment_amount || computeRequiredDownpayment(reservation.room_rate, totalAmount));
+    const baseDownpaymentAmount = computeRequiredDownpayment(reservation.room_rate, totalAmount);
+    const depositDiscountPercent = inferDepositDiscountPercent(baseDownpaymentAmount, reservation.downpayment_amount);
+    const downpaymentAmount = Number(reservation.downpayment_amount || computeRequiredDownpayment(reservation.room_rate, totalAmount, depositDiscountPercent));
 
     return `
       <form id="reservation-form" class="form-stack">
@@ -434,8 +450,20 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
               <input id="downpayment_amount" name="downpayment_amount" type="number" min="0" step="0.01" value="${downpaymentAmount}" ${isAdmin ? "" : "readonly"}>
             </div>
             <div class="field">
+              <label for="downpayment_discount_percent">Deposit Discount</label>
+              <select id="downpayment_discount_percent" name="downpayment_discount_percent">
+                ${DEPOSIT_DISCOUNT_OPTIONS.map((percent) => `<option value="${percent}" ${percent === depositDiscountPercent ? "selected" : ""}>${percent ? `${percent}% discount` : "No discount"}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+          <div class="filter-row">
+            <div class="field">
               <label for="downpayment_paid">Deposit Paid</label>
               <input id="downpayment_paid" name="downpayment_paid" type="number" min="0.01" step="0.01" value="${reservation.downpayment_paid || downpaymentAmount}" required>
+            </div>
+            <div class="field">
+              <label for="deposit_discount_preview">Discount Applied</label>
+              <input id="deposit_discount_preview" type="text" value="${formatCurrency(baseDownpaymentAmount - downpaymentAmount)}" readonly>
             </div>
           </div>
           <div class="filter-row">
@@ -496,14 +524,16 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     const currentRoom = reservation.rooms ? { id: reservation.rooms.id || reservation.room_id, room_number: reservation.rooms.room_number } : null;
     const initialTotal = Number(reservation.total_amount || 0);
     const defaultDownpayment = computeRequiredDownpayment(reservation.room_rate, initialTotal);
+    const initialDepositDiscountPercent = inferDepositDiscountPercent(defaultDownpayment, reservation.downpayment_amount);
     let selectedAvailableRooms = [];
     let availableRoomsByType = new Map();
 
     qs("#guest_id").value = reservation.guest_id || "";
     qs("#room_type_id").value = originalDates.room_type_id;
     qs("#payment_method").value = PAYMENT_METHODS.includes(reservation.payment_method) ? reservation.payment_method : "Cash";
-    qs("#downpayment_amount").value = reservation.downpayment_amount || defaultDownpayment || 0;
-    qs("#downpayment_paid").value = reservation.downpayment_paid || defaultDownpayment || 0;
+    qs("#downpayment_discount_percent").value = String(initialDepositDiscountPercent);
+    qs("#downpayment_amount").value = reservation.downpayment_amount || computeRequiredDownpayment(reservation.room_rate, initialTotal, initialDepositDiscountPercent) || 0;
+    qs("#downpayment_paid").value = reservation.downpayment_paid || qs("#downpayment_amount").value || 0;
 
     function setNewGuestPanelVisible(visible) {
       qs("#new-guest-panel").style.display = visible ? "block" : "none";
@@ -523,6 +553,31 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       const isPaid = required > 0 && paid >= required;
       qs("#reservation-status-preview").textContent = isPaid ? "Confirmed" : "Pending";
       qs("#downpayment_status_preview").value = isPaid ? "Paid" : paid > 0 ? "Partially Paid" : "Required";
+    }
+
+    function getSelectedRoomForDeposit() {
+      const roomId = qs("#room_id").value;
+      return selectedAvailableRooms.find((item) => Number(item.id) === Number(roomId))
+        || roomOptions.find((item) => Number(item.id) === Number(roomId));
+    }
+
+    function applyDepositDiscount({ syncPaid = false } = {}) {
+      const room = getSelectedRoomForDeposit();
+      const reservationTotal = Number(String(qs("#reservation-total-preview").value).replace(/[^\d.-]/g, "")) || initialTotal;
+      const discountPercent = Number(qs("#downpayment_discount_percent").value || 0);
+      const baseDeposit = computeRequiredDownpayment(room?.rate || reservation.room_rate, reservationTotal);
+      const discountedDeposit = computeRequiredDownpayment(room?.rate || reservation.room_rate, reservationTotal, discountPercent);
+      const currentPaid = Number(qs("#downpayment_paid").value || 0);
+      const currentRequired = Number(qs("#downpayment_amount").value || 0);
+
+      qs("#downpayment_amount").value = discountedDeposit;
+      qs("#deposit_discount_preview").value = formatCurrency(Math.max(baseDeposit - discountedDeposit, 0));
+
+      if (syncPaid || !reservation.id || currentPaid === 0 || currentPaid === currentRequired) {
+        qs("#downpayment_paid").value = discountedDeposit;
+      }
+
+      updateStatusPreview();
     }
 
     function buildAccommodationRequestSummary() {
@@ -724,21 +779,22 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
 
     async function updateTotalPreview() {
       const roomId = qs("#room_id").value;
-      const room = selectedAvailableRooms.find((item) => Number(item.id) === Number(roomId))
-        || roomOptions.find((item) => Number(item.id) === Number(roomId));
+      const room = getSelectedRoomForDeposit();
       const checkIn = qs("#check_in").value;
       const checkOut = qs("#check_out").value;
 
       if (!roomId || !room || !checkIn || !checkOut || checkOut <= checkIn) {
         qs("#reservation-total-preview").value = formatCurrency(0);
         qs("#downpayment_amount").value = 0;
+        qs("#deposit_discount_preview").value = formatCurrency(0);
         updateStatusPreview();
         return;
       }
 
       const nights = Math.max(1, Math.ceil((new Date(checkOut) - new Date(checkIn)) / 86400000));
       const total = roundCurrency(Number(room.rate || 0) * nights);
-      const computedDownpayment = computeRequiredDownpayment(room.rate, total);
+      const discountPercent = Number(qs("#downpayment_discount_percent").value || 0);
+      const computedDownpayment = computeRequiredDownpayment(room.rate, total, discountPercent);
       qs("#reservation-total-preview").value = formatCurrency(total);
       if (!reservation.id || !Number(reservation.downpayment_amount || 0) || Number(qs("#downpayment_amount").value || 0) === defaultDownpayment) {
         qs("#downpayment_amount").value = computedDownpayment;
@@ -746,6 +802,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       if (!reservation.id && !Number(qs("#downpayment_paid").value || 0)) {
         qs("#downpayment_paid").value = computedDownpayment;
       }
+      applyDepositDiscount();
       updateStatusPreview();
     }
 
@@ -755,8 +812,14 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     qs("#check_in_time").addEventListener("change", updateDateConstraints);
     qs("#room_type_id").addEventListener("change", async () => { syncRoomTypeInclusions(); renderAvailabilitySummary(); await refreshAvailableRooms(); await updateTotalPreview(); });
     qs("#room_id").addEventListener("change", updateTotalPreview);
+    qs("#downpayment_discount_percent").addEventListener("change", () => applyDepositDiscount({ syncPaid: true }));
     qs("#downpayment_paid").addEventListener("input", updateStatusPreview);
-    qs("#downpayment_amount").addEventListener("input", updateStatusPreview);
+    qs("#downpayment_amount").addEventListener("input", () => {
+      const reservationTotal = Number(String(qs("#reservation-total-preview").value).replace(/[^\d.-]/g, "")) || initialTotal;
+      const baseDeposit = computeRequiredDownpayment(getSelectedRoomForDeposit()?.rate || reservation.room_rate, reservationTotal);
+      qs("#deposit_discount_preview").value = formatCurrency(Math.max(baseDeposit - Number(qs("#downpayment_amount").value || 0), 0));
+      updateStatusPreview();
+    });
 
     qs("#toggle-new-guest-button").addEventListener("click", () => {
       setNewGuestPanelVisible(qs("#new-guest-panel").style.display !== "block");
@@ -826,6 +889,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
       qs("#reservation-total-preview").value = formatCurrency(0);
       qs("#downpayment_amount").value = 0;
       qs("#downpayment_paid").value = 0;
+      qs("#deposit_discount_preview").value = formatCurrency(0);
       updateStatusPreview();
     });
 
@@ -836,6 +900,8 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
           const payload = serializeForm(event.currentTarget);
           payload.created_by = auth.user.id;
           payload.downpayment_required = true;
+          const depositDiscountPercent = Number(payload.downpayment_discount_percent || 0);
+          delete payload.downpayment_discount_percent;
           const accommodationSummary = buildAccommodationRequestSummary();
           payload.special_requests = [payload.special_requests, accommodationSummary].filter(Boolean).join("\n\n");
           if (!payload.id) {
@@ -867,7 +933,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
 
           const selectedRoom = roomOptions.find((item) => Number(item.id) === Number(payload.room_id))
             || selectedAvailableRooms.find((item) => Number(item.id) === Number(payload.room_id));
-          const computedDownpayment = computeRequiredDownpayment(selectedRoom?.rate, reservationTotal);
+          const computedDownpayment = computeRequiredDownpayment(selectedRoom?.rate, reservationTotal, depositDiscountPercent);
           if (isAdmin && requiredDownpayment !== computedDownpayment && !payload.downpayment_override_reason?.trim()) {
             throw new Error("Admin override reason is required when changing the computed downpayment.");
           }

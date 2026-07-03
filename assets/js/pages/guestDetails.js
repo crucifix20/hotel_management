@@ -229,6 +229,9 @@ await initProtectedPage("guests", async ({ root, auth }) => {
         <p class="eyebrow">Guest Profile</p>
         <h2>${guest.full_name}</h2>
         <p class="detail-copy">${guest.preferences || "No stated preferences have been recorded for this guest yet."}</p>
+        <div class="button-row" style="margin-top:16px;">
+          <button class="btn btn-primary print-guest-profile-trigger" type="button">Print Guest Profile</button>
+        </div>
       </div>
       <div class="stitch-detail-meta">
         <div><span>Email</span><strong>${guest.email || "-"}</strong></div>
@@ -364,4 +367,7 @@ await initProtectedPage("guests", async ({ root, auth }) => {
   `);
 
   document.getElementById("print-guest-profile-button")?.addEventListener("click", () => window.print());
+  document.querySelectorAll(".print-guest-profile-trigger").forEach((button) => {
+    button.addEventListener("click", () => window.print());
+  });
 });
