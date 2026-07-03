@@ -186,3 +186,14 @@ export async function createManagedStaffLogin({ email, password, fullName }) {
   await signupClient.auth.signOut();
   return data.user;
 }
+
+export async function sendPasswordReset(email) {
+  if (!email) {
+    throw new Error("An email address is required to send a password reset.");
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) {
+    throw error;
+  }
+}

@@ -1,4 +1,4 @@
-import { createManagedStaffLogin } from "../auth.js";
+import { createManagedStaffLogin, sendPasswordReset } from "../auth.js";
 import { initProtectedPage } from "../router.js";
 import { createAuditLog } from "../services/auditService.js";
 import { deleteStaff, listStaff, saveStaff } from "../services/staffService.js";
@@ -84,10 +84,12 @@ await initProtectedPage("staff", async ({ root, auth }) => {
                   <div><span>Status</span>${createStatusBadge(member.status)}</div>
                   <div><span>Contact</span><strong>${member.email || member.phone || "No contact"}</strong></div>
                   <div><span>Login</span><strong>${member.auth_user_id ? "Enabled" : "Directory only"}</strong></div>
+                  <div><span>Password</span><strong>${member.auth_user_id ? "Protected" : "No login"}</strong></div>
                   <div><span>Tasks</span><strong>${(member.housekeeping_tasks || []).length} assigned</strong></div>
                 </div>
                 <div class="table-actions">
                   <button class="btn btn-ghost staff-edit-button" data-id="${member.id}" type="button">Edit</button>
+                  ${member.auth_user_id ? `<button class="btn btn-ghost staff-reset-password-button" data-id="${member.id}" type="button">Reset Password</button>` : ""}
                   <button class="btn btn-danger staff-delete-button" data-id="${member.id}" type="button">Delete</button>
                 </div>
               </article>
@@ -283,6 +285,36 @@ await initProtectedPage("staff", async ({ root, auth }) => {
       const member = staffMembers.find((item) => item.id === Number(button.dataset.id));
       openModal({ title: `Edit ${member.full_name}`, body: staffFormMarkup(member) });
       bindStaffForm(member);
+    }));
+
+    root.querySelectorAll(".staff-reset-password-button").forEach((button) => button.addEventListener("click", async () => {
+      const member = staffMembers.find((item) => item.id === Number(button.dataset.id));
+      if (!member?.email) {
+        showToast("This staff member needs an email address before password reset can be sent.", "error");
+        return;
+      }
+
+      if (!await confirmDialog({
+        title: "Reset staff password",
+        message: `Send a password reset email to ${member.email}?`,
+        confirmLabel: "Send Reset",
+      })) {
+        return;
+      }
+
+      try {
+        await sendPasswordReset(member.email);
+        await createAuditLog({
+          userId: auth.user.id,
+          action: "Sent staff password reset",
+          entityType: "staff",
+          entityId: member.id,
+          details: member.email,
+        });
+        showToast("Password reset email sent.", "success");
+      } catch (error) {
+        showToast(friendlyError(error), "error");
+      }
     }));
 
     root.querySelectorAll(".staff-delete-button").forEach((button) => button.addEventListener("click", async () => {
