@@ -63,6 +63,7 @@ create table if not exists public.guests (
   nationality text,
   origin text,
   booking_person text,
+  guest_type text,
   vip_status boolean not null default false,
   preferences text,
   notes text,
@@ -73,6 +74,7 @@ alter table public.guests add column if not exists company_name text;
 alter table public.guests add column if not exists nationality text;
 alter table public.guests add column if not exists origin text;
 alter table public.guests add column if not exists booking_person text;
+alter table public.guests add column if not exists guest_type text;
 
 create table if not exists public.room_types (
   id bigserial primary key,

@@ -41,6 +41,7 @@ function renderGuestProfileFolio({ guest, memberships, stays, amenities, service
             <dl class="detail-kv"><dt>Nationality</dt><dd>${escapeHtml(guest.nationality || "-")}</dd></dl>
             <dl class="detail-kv"><dt>Origin</dt><dd>${escapeHtml(guest.origin || "-")}</dd></dl>
             <dl class="detail-kv"><dt>Booking Person</dt><dd>${escapeHtml(guest.booking_person || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Guest Type</dt><dd>${escapeHtml(guest.guest_type || "-")}</dd></dl>
             <dl class="detail-kv"><dt>Preferences</dt><dd>${escapeHtml(guest.preferences || "-")}</dd></dl>
             <dl class="detail-kv"><dt>Total Reservations</dt><dd>${escapeHtml(String(stays.length))}</dd></dl>
             <dl class="detail-kv"><dt>Memberships</dt><dd>${escapeHtml(String(memberships.length))}</dd></dl>
@@ -212,6 +213,7 @@ await initProtectedPage("guests", async ({ root, auth }) => {
         <div><span>Nationality</span><strong>${guest.nationality || "-"}</strong></div>
         <div><span>Origin</span><strong>${guest.origin || "-"}</strong></div>
         <div><span>Booking Person</span><strong>${guest.booking_person || "-"}</strong></div>
+        <div><span>Guest Type</span><strong>${guest.guest_type || "-"}</strong></div>
         <div><span>Address</span><strong>${guest.address || "-"}</strong></div>
       </div>
     </section>

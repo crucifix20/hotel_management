@@ -6,6 +6,7 @@ import { closeModal, confirmDialog, createPageHeader, createVipBadge, openModal,
 
 await initProtectedPage("guests", async ({ root, auth }) => {
   const canDeleteGuests = auth.profile.role === "Admin";
+  const GUEST_TYPE_OPTIONS = ["FIT", "Airline Crew", "Travel Agency Account", "Corporate Account", "OFW", "Balikbayan", "Others"];
   let filters = { search: "", vipOnly: false, clubStatus: "" };
 
   async function load() {
@@ -69,6 +70,7 @@ await initProtectedPage("guests", async ({ root, auth }) => {
             <div class="stack-sm">
               <div><strong>Email:</strong> ${guest.email || "-"}</div>
               <div><strong>Phone:</strong> ${guest.phone || "-"}</div>
+              <div><strong>Guest Type:</strong> ${guest.guest_type || "-"}</div>
               <div><strong>Preferences:</strong> ${guest.preferences || "None recorded"}</div>
               <div><strong>Club Memberships:</strong> ${(guest.club_registrations || []).map((membership) => `${membership.clubs?.name || "Club"} - ${membership.membership_level || "Member"}`).join(", ") || "None"}</div>
             </div>
@@ -89,6 +91,8 @@ await initProtectedPage("guests", async ({ root, auth }) => {
   }
 
   function guestFormMarkup(guest = {}) {
+    const isCustomGuestType = guest.guest_type && !GUEST_TYPE_OPTIONS.includes(guest.guest_type);
+    const guestTypeValue = isCustomGuestType ? "Others" : guest.guest_type || "";
     return `
       <form id="guest-form" class="form-stack">
         <input name="id" type="hidden" value="${guest.id || ""}">
@@ -139,6 +143,19 @@ await initProtectedPage("guests", async ({ root, auth }) => {
             <input id="booking_person" name="booking_person" value="${guest.booking_person || ""}">
           </div>
         </div>
+        <div class="filter-row">
+          <div class="field">
+            <label for="guest_type">Guest Type</label>
+            <select id="guest_type" name="guest_type">
+              <option value="">Select guest type</option>
+              ${GUEST_TYPE_OPTIONS.map((type) => `<option value="${type}" ${type === guestTypeValue ? "selected" : ""}>${type}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field" id="guest-type-other-field" style="display:${guestTypeValue === "Others" ? "block" : "none"};">
+            <label for="guest_type_other">Other Guest Type</label>
+            <input id="guest_type_other" name="guest_type_other" value="${isCustomGuestType ? guest.guest_type : ""}" placeholder="Enter guest type">
+          </div>
+        </div>
         <div class="field">
           <label for="preferences">Preferences</label>
           <textarea id="preferences" name="preferences">${guest.preferences || ""}</textarea>
@@ -154,12 +171,19 @@ await initProtectedPage("guests", async ({ root, auth }) => {
 
   function bindGuestForm(guest = {}) {
     qs("#vip_status").value = guest.vip_status ? "true" : "false";
+    const syncGuestTypeOther = () => {
+      qs("#guest-type-other-field").style.display = qs("#guest_type").value === "Others" ? "block" : "none";
+    };
+    qs("#guest_type").addEventListener("change", syncGuestTypeOther);
+    syncGuestTypeOther();
     qs("#guest-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       try {
         await withFormBusy(event.currentTarget, guest.id ? "Saving..." : "Creating...", async () => {
           const payload = serializeForm(event.currentTarget);
           payload.vip_status = payload.vip_status === "true";
+          payload.guest_type = payload.guest_type === "Others" ? payload.guest_type_other?.trim() || "Others" : payload.guest_type || null;
+          delete payload.guest_type_other;
           if (!payload.id) {
             delete payload.id;
           } else {

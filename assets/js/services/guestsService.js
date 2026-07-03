@@ -15,7 +15,7 @@ export async function listGuests(filters = {}) {
     .order("full_name");
 
   if (filters.search) {
-    query = query.or(`full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,phone.ilike.%${filters.search}%,company_name.ilike.%${filters.search}%,nationality.ilike.%${filters.search}%,origin.ilike.%${filters.search}%,booking_person.ilike.%${filters.search}%`);
+    query = query.or(`full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,phone.ilike.%${filters.search}%,company_name.ilike.%${filters.search}%,nationality.ilike.%${filters.search}%,origin.ilike.%${filters.search}%,booking_person.ilike.%${filters.search}%,guest_type.ilike.%${filters.search}%`);
   }
 
   if (filters.vipOnly) {

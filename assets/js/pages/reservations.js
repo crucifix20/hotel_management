@@ -28,6 +28,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
   const TRANSACTION_TYPE_CHECKOUT = "Checkout Payment";
   const TRANSACTION_TYPE_INCIDENTAL = "Incidental Deposit";
   const DEPOSIT_DISCOUNT_OPTIONS = [0, 5, 10, 15, 20, 25, 30];
+  const GUEST_TYPE_OPTIONS = ["FIT", "Airline Crew", "Travel Agency Account", "Corporate Account", "OFW", "Balikbayan", "Others"];
 
   function computeRequiredDownpayment(roomRate, totalAmount = 0, discountPercent = 0) {
     const oneNightRate = Number(roomRate || 0);
@@ -339,6 +340,19 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
             </div>
             <div class="filter-row">
               <div class="field">
+                <label for="new_guest_type">Guest Type</label>
+                <select id="new_guest_type" name="new_guest_type">
+                  <option value="">Select guest type</option>
+                  ${GUEST_TYPE_OPTIONS.map((type) => `<option value="${type}">${type}</option>`).join("")}
+                </select>
+              </div>
+              <div class="field" id="new-guest-type-other-field" style="display:none;">
+                <label for="new_guest_type_other">Other Guest Type</label>
+                <input id="new_guest_type_other" name="new_guest_type_other" placeholder="Enter guest type">
+              </div>
+            </div>
+            <div class="filter-row">
+              <div class="field">
                 <label for="new_guest_preferences">Preferences</label>
                 <input id="new_guest_preferences" name="new_guest_preferences" placeholder="High floor, extra pillows">
               </div>
@@ -586,12 +600,19 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
         "new_guest_nationality",
         "new_guest_origin",
         "new_guest_booking_person",
+        "new_guest_type",
+        "new_guest_type_other",
         "new_guest_preferences",
         "new_guest_notes",
       ].forEach((id) => {
         qs(`#${id}`).value = "";
       });
       qs("#new_guest_vip_status").checked = false;
+      syncNewGuestTypeOther();
+    }
+
+    function syncNewGuestTypeOther() {
+      qs("#new-guest-type-other-field").style.display = qs("#new_guest_type").value === "Others" ? "block" : "none";
     }
 
     function updateStatusPreview() {
@@ -871,6 +892,8 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     qs("#toggle-new-guest-button").addEventListener("click", () => {
       setNewGuestPanelVisible(qs("#new-guest-panel").style.display !== "block");
     });
+    qs("#new_guest_type").addEventListener("change", syncNewGuestTypeOther);
+    syncNewGuestTypeOther();
     qs("#cancel-new-guest-button").addEventListener("click", () => {
       clearNewGuestFields();
       setNewGuestPanelVisible(false);
@@ -886,6 +909,9 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
         nationality: qs("#new_guest_nationality").value.trim() || null,
         origin: qs("#new_guest_origin").value.trim() || null,
         booking_person: qs("#new_guest_booking_person").value.trim() || null,
+        guest_type: qs("#new_guest_type").value === "Others"
+          ? qs("#new_guest_type_other").value.trim() || "Others"
+          : qs("#new_guest_type").value || null,
         vip_status: qs("#new_guest_vip_status").checked,
         preferences: qs("#new_guest_preferences").value.trim() || null,
         notes: qs("#new_guest_notes").value.trim() || null,
