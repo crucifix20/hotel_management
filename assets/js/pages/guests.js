@@ -119,6 +119,26 @@ await initProtectedPage("guests", async ({ root, auth }) => {
           <label for="address">Address</label>
           <input id="address" name="address" value="${guest.address || ""}">
         </div>
+        <div class="filter-row">
+          <div class="field">
+            <label for="company_name">Company Name</label>
+            <input id="company_name" name="company_name" value="${guest.company_name || ""}">
+          </div>
+          <div class="field">
+            <label for="nationality">Nationality</label>
+            <input id="nationality" name="nationality" value="${guest.nationality || ""}">
+          </div>
+        </div>
+        <div class="filter-row">
+          <div class="field">
+            <label for="origin">Origin</label>
+            <input id="origin" name="origin" value="${guest.origin || ""}">
+          </div>
+          <div class="field">
+            <label for="booking_person">Booking Person</label>
+            <input id="booking_person" name="booking_person" value="${guest.booking_person || ""}">
+          </div>
+        </div>
         <div class="field">
           <label for="preferences">Preferences</label>
           <textarea id="preferences" name="preferences">${guest.preferences || ""}</textarea>

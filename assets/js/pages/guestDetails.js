@@ -37,6 +37,10 @@ function renderGuestProfileFolio({ guest, memberships, stays, amenities, service
             <dl class="detail-kv"><dt>Phone</dt><dd>${escapeHtml(guest.phone || "-")}</dd></dl>
             <dl class="detail-kv"><dt>VIP Status</dt><dd>${guest.vip_status ? "VIP Guest" : "Standard"}</dd></dl>
             <dl class="detail-kv"><dt>Address</dt><dd>${escapeHtml(guest.address || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Company</dt><dd>${escapeHtml(guest.company_name || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Nationality</dt><dd>${escapeHtml(guest.nationality || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Origin</dt><dd>${escapeHtml(guest.origin || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Booking Person</dt><dd>${escapeHtml(guest.booking_person || "-")}</dd></dl>
             <dl class="detail-kv"><dt>Preferences</dt><dd>${escapeHtml(guest.preferences || "-")}</dd></dl>
             <dl class="detail-kv"><dt>Total Reservations</dt><dd>${escapeHtml(String(stays.length))}</dd></dl>
             <dl class="detail-kv"><dt>Memberships</dt><dd>${escapeHtml(String(memberships.length))}</dd></dl>
@@ -54,7 +58,7 @@ function renderGuestProfileFolio({ guest, memberships, stays, amenities, service
           <div class="table-wrap" style="margin-top:18px;">
             <table>
               <thead>
-                <tr><th>Confirmation</th><th>Room</th><th>Dates</th><th>Status</th></tr>
+                <tr><th>Confirmation</th><th>Room</th><th>Booking Dates</th><th>Travel</th><th>Status</th></tr>
               </thead>
               <tbody>
                 ${renderPrintRows(stays.map((reservation) => `
@@ -62,9 +66,10 @@ function renderGuestProfileFolio({ guest, memberships, stays, amenities, service
                     <td>${escapeHtml(reservation.confirmation_number || `Reservation #${reservation.id}`)}</td>
                     <td>${escapeHtml(`Room ${reservation.rooms?.room_number || "-"} - ${reservation.rooms?.room_types?.name || "-"}`)}</td>
                     <td>${escapeHtml(`${formatDate(reservation.check_in)} to ${formatDate(reservation.check_out)}`)}</td>
+                    <td>${escapeHtml(`${formatDate(reservation.arrival_date)} / ${reservation.flight_number || "-"} / ${formatDate(reservation.departure_date)}`)}</td>
                     <td>${escapeHtml(reservation.status || "-")}</td>
                   </tr>
-                `), "No reservation history recorded.")}
+                `), "No reservation history recorded.", 5)}
               </tbody>
             </table>
           </div>
@@ -203,6 +208,10 @@ await initProtectedPage("guests", async ({ root, auth }) => {
         <div><span>Email</span><strong>${guest.email || "-"}</strong></div>
         <div><span>Phone</span><strong>${guest.phone || "-"}</strong></div>
         <div><span>VIP</span><strong>${guest.vip_status ? createVipBadge("VIP Guest") : "Standard"}</strong></div>
+        <div><span>Company</span><strong>${guest.company_name || "-"}</strong></div>
+        <div><span>Nationality</span><strong>${guest.nationality || "-"}</strong></div>
+        <div><span>Origin</span><strong>${guest.origin || "-"}</strong></div>
+        <div><span>Booking Person</span><strong>${guest.booking_person || "-"}</strong></div>
         <div><span>Address</span><strong>${guest.address || "-"}</strong></div>
       </div>
     </section>

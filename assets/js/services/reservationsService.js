@@ -21,6 +21,9 @@ const RESERVATION_COLUMNS = [
   "incidental_deposit_amount",
   "incidental_deposit_paid",
   "special_requests",
+  "arrival_date",
+  "flight_number",
+  "departure_date",
   "internal_notes",
   "admin_notes",
   "guest_verified",
@@ -42,7 +45,7 @@ const RESERVATION_COLUMNS = [
 function reservationsQuery(detailed = false) {
   const guestSelection = detailed
     ? `guests(
-        id, full_name, email, phone, vip_status, preferences, notes,
+        *,
         amenity_bookings(*, amenities(name, price)),
         club_registrations(*, clubs(*, club_benefits(*)), club_transactions(*))
       )`
@@ -348,6 +351,9 @@ function normalizeReservationPayload(payload, calc) {
     downpayment_status: downpaymentStatus,
     incidental_deposit_amount: roundCurrency(parseNumber(payload.incidental_deposit_amount, 0)),
     incidental_deposit_paid: roundCurrency(parseNumber(payload.incidental_deposit_paid, 0)),
+    arrival_date: payload.arrival_date || null,
+    flight_number: payload.flight_number || null,
+    departure_date: payload.departure_date || null,
     guest_verified: payload.guest_verified === true || payload.guest_verified === "true" || payload.guest_verified === "on",
     payment_status: payload.payment_status || paymentStatus,
     status: reservationStatus,

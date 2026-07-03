@@ -319,6 +319,26 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
             </div>
             <div class="filter-row">
               <div class="field">
+                <label for="new_guest_company_name">Company Name</label>
+                <input id="new_guest_company_name" name="new_guest_company_name" placeholder="Company or organization">
+              </div>
+              <div class="field">
+                <label for="new_guest_nationality">Nationality</label>
+                <input id="new_guest_nationality" name="new_guest_nationality" placeholder="Guest nationality">
+              </div>
+            </div>
+            <div class="filter-row">
+              <div class="field">
+                <label for="new_guest_origin">Origin</label>
+                <input id="new_guest_origin" name="new_guest_origin" placeholder="City or country of origin">
+              </div>
+              <div class="field">
+                <label for="new_guest_booking_person">Booking Person</label>
+                <input id="new_guest_booking_person" name="new_guest_booking_person" placeholder="Person who made the booking">
+              </div>
+            </div>
+            <div class="filter-row">
+              <div class="field">
                 <label for="new_guest_preferences">Preferences</label>
                 <input id="new_guest_preferences" name="new_guest_preferences" placeholder="High floor, extra pillows">
               </div>
@@ -386,12 +406,28 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
               </select>
             </div>
             <div class="field">
-              <label for="transportation_out">Transportation Out</label>
+              <label for="transportation_out">Shuttle</label>
               <select id="transportation_out" name="transportation_out">
                 <option value="">Not requested</option>
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
               </select>
+            </div>
+          </div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="arrival_date">Arrival Date</label>
+              <input id="arrival_date" name="arrival_date" type="date" value="${reservation.arrival_date?.slice(0, 10) || ""}">
+            </div>
+            <div class="field">
+              <label for="flight_number">Flight Number</label>
+              <input id="flight_number" name="flight_number" value="${reservation.flight_number || ""}" placeholder="Flight or transport reference">
+            </div>
+          </div>
+          <div class="filter-row">
+            <div class="field">
+              <label for="departure_date">Departure Date</label>
+              <input id="departure_date" name="departure_date" type="date" value="${reservation.departure_date?.slice(0, 10) || ""}">
             </div>
           </div>
           <div class="field">
@@ -541,7 +577,18 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     }
 
     function clearNewGuestFields() {
-      ["new_guest_full_name", "new_guest_email", "new_guest_phone", "new_guest_address", "new_guest_preferences", "new_guest_notes"].forEach((id) => {
+      [
+        "new_guest_full_name",
+        "new_guest_email",
+        "new_guest_phone",
+        "new_guest_address",
+        "new_guest_company_name",
+        "new_guest_nationality",
+        "new_guest_origin",
+        "new_guest_booking_person",
+        "new_guest_preferences",
+        "new_guest_notes",
+      ].forEach((id) => {
         qs(`#${id}`).value = "";
       });
       qs("#new_guest_vip_status").checked = false;
@@ -583,7 +630,7 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
     function buildAccommodationRequestSummary() {
       const rows = [
         qs("#smoking_preference").value,
-        qs("#transportation_out").value ? `Transportation out: ${qs("#transportation_out").value}` : "",
+        qs("#transportation_out").value ? `Shuttle: ${qs("#transportation_out").value}` : "",
       ].filter(Boolean);
 
       return rows.join("\n");
@@ -835,6 +882,10 @@ await initProtectedPage("reservations", async ({ root, auth }) => {
         email: qs("#new_guest_email").value.trim() || null,
         phone: qs("#new_guest_phone").value.trim() || null,
         address: qs("#new_guest_address").value.trim() || null,
+        company_name: qs("#new_guest_company_name").value.trim() || null,
+        nationality: qs("#new_guest_nationality").value.trim() || null,
+        origin: qs("#new_guest_origin").value.trim() || null,
+        booking_person: qs("#new_guest_booking_person").value.trim() || null,
         vip_status: qs("#new_guest_vip_status").checked,
         preferences: qs("#new_guest_preferences").value.trim() || null,
         notes: qs("#new_guest_notes").value.trim() || null,

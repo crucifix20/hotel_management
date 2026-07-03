@@ -113,7 +113,7 @@ await initProtectedPage("amenities", async ({ root, auth }) => {
           <input name="id" type="hidden" value="${service.id || ""}">
           <div class="field">
             <label for="service_name">Service Name</label>
-            <input id="service_name" name="name" placeholder="Example: Transportation Out" value="${service.name || ""}" required>
+            <input id="service_name" name="name" placeholder="Example: Shuttle" value="${service.name || ""}" required>
             <p class="field-help">This is the service staff can later book for a checked-in guest.</p>
           </div>
           <div class="field"><label for="service_description">Description</label><textarea id="service_description" name="description">${service.description || ""}</textarea></div>

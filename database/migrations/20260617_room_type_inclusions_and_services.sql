@@ -18,7 +18,7 @@ from (
     ('Extra Pillow', 'Housekeeping request for an additional pillow.', 'Housekeeping', 0.00, false, 'Available'),
     ('Guest Escort', 'Bell service escort from front desk to assigned room.', 'Other', 0.00, false, 'Available'),
     ('Luggage Assistance', 'Bell service handling for guest luggage.', 'Other', 0.00, false, 'Available'),
-    ('Transportation Out', 'Arrange guest outbound transportation.', 'Transport', 0.00, false, 'Available')
+    ('Shuttle', 'Arrange guest shuttle transportation.', 'Transport', 0.00, false, 'Available')
 ) as seed(name, description, category, price, is_chargeable, status)
 where not exists (
   select 1

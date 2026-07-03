@@ -59,11 +59,20 @@ create table if not exists public.guests (
   email text unique,
   phone text,
   address text,
+  company_name text,
+  nationality text,
+  origin text,
+  booking_person text,
   vip_status boolean not null default false,
   preferences text,
   notes text,
   created_at timestamptz not null default now()
 );
+
+alter table public.guests add column if not exists company_name text;
+alter table public.guests add column if not exists nationality text;
+alter table public.guests add column if not exists origin text;
+alter table public.guests add column if not exists booking_person text;
 
 create table if not exists public.room_types (
   id bigserial primary key,
@@ -111,6 +120,9 @@ create table if not exists public.reservations (
   incidental_deposit_amount numeric(12, 2) not null default 0,
   incidental_deposit_paid numeric(12, 2) not null default 0,
   special_requests text,
+  arrival_date date,
+  flight_number text,
+  departure_date date,
   internal_notes text,
   admin_notes text,
   guest_verified boolean not null default false,
@@ -146,6 +158,9 @@ alter table public.reservations add column if not exists downpayment_paid numeri
 alter table public.reservations add column if not exists downpayment_status text not null default 'Required';
 alter table public.reservations add column if not exists incidental_deposit_amount numeric(12, 2) not null default 0;
 alter table public.reservations add column if not exists incidental_deposit_paid numeric(12, 2) not null default 0;
+alter table public.reservations add column if not exists arrival_date date;
+alter table public.reservations add column if not exists flight_number text;
+alter table public.reservations add column if not exists departure_date date;
 alter table public.reservations add column if not exists internal_notes text;
 alter table public.reservations add column if not exists admin_notes text;
 alter table public.reservations add column if not exists guest_verified boolean not null default false;
