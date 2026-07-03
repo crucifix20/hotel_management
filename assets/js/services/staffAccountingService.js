@@ -57,6 +57,34 @@ export async function listStaffTransactions({ userId, isAdmin = false, filters =
   return transactions;
 }
 
+export async function deleteAllStaffTransactions() {
+  const { data: staffAccounts, error: staffError } = await supabase
+    .from("staff")
+    .select("auth_user_id")
+    .not("auth_user_id", "is", null);
+
+  if (staffError) {
+    throw staffError;
+  }
+
+  const staffUserIds = [...new Set((staffAccounts || []).map((staff) => staff.auth_user_id).filter(Boolean))];
+  if (!staffUserIds.length) {
+    return 0;
+  }
+
+  const { data, error } = await supabase
+    .from("payments")
+    .delete()
+    .in("received_by", staffUserIds)
+    .select("id");
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.length || 0;
+}
+
 export function summarizeTransactions(transactions = []) {
   const totalsByMethod = transactions.reduce((summary, transaction) => {
     const method = transaction.payment_method || "Unspecified";

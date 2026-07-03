@@ -171,7 +171,12 @@ await initProtectedPage("staff", async ({ root, auth }) => {
             </div>
             <div class="field">
               <label for="login_password">Login Password</label>
-              <input id="login_password" name="login_password" type="password" minlength="6" placeholder="Minimum 6 characters">
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input id="login_password" name="login_password" type="password" minlength="6" placeholder="Minimum 6 characters">
+                <button class="btn btn-ghost" id="toggle-login-password" type="button" aria-controls="login_password" aria-pressed="false">
+                  <span class="material-symbols-outlined">visibility</span>
+                </button>
+              </div>
               <p class="field-help">Uses the staff email above. The created account will receive the Staff role.</p>
             </div>
           </div>
@@ -185,16 +190,27 @@ await initProtectedPage("staff", async ({ root, auth }) => {
     qs("#status").value = member.status || "Active";
     const loginToggle = qs("#create_login_access");
     const loginPasswordField = qs("#login_password");
+    const loginPasswordToggle = qs("#toggle-login-password");
 
     if (loginToggle && loginPasswordField) {
       const syncLoginFieldState = () => {
         loginPasswordField.disabled = !loginToggle.checked;
         loginPasswordField.required = loginToggle.checked;
+        if (loginPasswordToggle) {
+          loginPasswordToggle.disabled = !loginToggle.checked;
+        }
       };
 
       syncLoginFieldState();
       loginToggle.addEventListener("change", syncLoginFieldState);
     }
+
+    loginPasswordToggle?.addEventListener("click", () => {
+      const isVisible = loginPasswordField.type === "text";
+      loginPasswordField.type = isVisible ? "password" : "text";
+      loginPasswordToggle.setAttribute("aria-pressed", String(!isVisible));
+      loginPasswordToggle.querySelector(".material-symbols-outlined").textContent = isVisible ? "visibility" : "visibility_off";
+    });
 
     qs("#staff-form").addEventListener("submit", async (event) => {
       event.preventDefault();

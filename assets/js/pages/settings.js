@@ -1,8 +1,9 @@
 import { initProtectedPage } from "../router.js";
 import { createAuditLog } from "../services/auditService.js";
 import { deleteRoomType, listRoomTypes, saveRoomType } from "../services/roomsService.js";
+import { deleteAllStaffTransactions } from "../services/staffAccountingService.js";
 import { closeModal, confirmDialog, createPageHeader, openModal, showToast } from "../ui.js";
-import { friendlyError, formatCurrency, getStoredSettings, qs, render, saveStoredSettings, serializeForm, withFormBusy } from "../utils.js";
+import { escapeHtml, friendlyError, formatCurrency, getStoredSettings, qs, render, saveStoredSettings, serializeForm, withFormBusy } from "../utils.js";
 
 await initProtectedPage("settings", async ({ root, auth }) => {
   async function load() {
@@ -79,6 +80,47 @@ await initProtectedPage("settings", async ({ root, auth }) => {
           </article>
         </aside>
       </section>
+      <section class="stitch-main-grid" style="margin-top:24px;">
+        <div class="stitch-overview-card">
+          <div class="stitch-overview-head">
+            <div>
+              <h2>Current User</h2>
+              <p>Signed-in account details for this session.</p>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <dl class="detail-kv">
+              <dt>Name</dt>
+              <dd>${escapeHtml(auth.profile?.full_name || "Grand Millado User")}</dd>
+            </dl>
+            <dl class="detail-kv">
+              <dt>Email</dt>
+              <dd>${escapeHtml(auth.user?.email || "-")}</dd>
+            </dl>
+            <dl class="detail-kv">
+              <dt>Role</dt>
+              <dd>${escapeHtml(auth.profile?.role || "Staff")}</dd>
+            </dl>
+            <dl class="detail-kv">
+              <dt>Password</dt>
+              <dd>Password is protected by Supabase Auth and cannot be displayed after it is created.</dd>
+            </dl>
+          </div>
+        </div>
+        <aside class="stitch-arrivals-card">
+          <div class="stitch-section-head">
+            <div>
+              <h2>Staff Transactions</h2>
+              <p>Remove every cashier closing payment record created by staff users.</p>
+            </div>
+          </div>
+          <article class="timeline-item">
+            <strong>Delete All Staff Transactions</strong>
+            <p class="muted">Deletes payment records received by linked staff login accounts. This cannot be undone.</p>
+          </article>
+          <button class="btn btn-danger" id="delete-staff-transactions-button" type="button">Delete All Staff Transactions</button>
+        </aside>
+      </section>
       <section class="stitch-overview-card" style="margin-top:24px;">
         <div class="stitch-overview-head">
           <div>
@@ -136,6 +178,40 @@ await initProtectedPage("settings", async ({ root, auth }) => {
         });
       } catch (error) {
         showToast(friendlyError(error), "error");
+      }
+    });
+
+    qs("#delete-staff-transactions-button")?.addEventListener("click", async () => {
+      if (!await confirmDialog({
+        title: "Delete all staff transactions",
+        message: "This permanently deletes every payment transaction received by linked staff login accounts from the cashier closing ledger.",
+        confirmLabel: "Delete All",
+        tone: "danger",
+      })) {
+        return;
+      }
+
+      const button = qs("#delete-staff-transactions-button");
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "Deleting...";
+
+      try {
+        const deletedCount = await deleteAllStaffTransactions();
+        await createAuditLog({
+          userId: auth.user.id,
+          action: "Deleted all staff transactions",
+          entityType: "payments",
+          details: `Deleted ${deletedCount} staff transaction records`,
+        });
+        showToast(`${deletedCount} staff transaction record${deletedCount === 1 ? "" : "s"} deleted.`, "success");
+      } catch (error) {
+        showToast(friendlyError(error), "error");
+      } finally {
+        if (document.body.contains(button)) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
       }
     });
 

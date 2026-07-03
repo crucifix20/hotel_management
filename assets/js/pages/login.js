@@ -37,7 +37,12 @@ if (!await redirectAuthenticatedUser()) {
             </div>
             <div class="field">
               <label for="password">Password</label>
-              <input id="password" name="password" type="password" placeholder="Enter your password" required>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input id="password" name="password" type="password" placeholder="Enter your password" required>
+                <button class="btn btn-ghost" id="toggle-password" type="button" aria-controls="password" aria-pressed="false">
+                  <span class="material-symbols-outlined">visibility</span>
+                </button>
+              </div>
             </div>
             <button class="btn btn-primary" id="login-submit" type="submit">Sign In</button>
             <p id="login-error" class="validation-error hidden"></p>
@@ -56,6 +61,15 @@ if (!await redirectAuthenticatedUser()) {
   `);
 
   enhanceFormAccessibility(root);
+
+  qs("#toggle-password")?.addEventListener("click", () => {
+    const passwordField = qs("#password");
+    const toggle = qs("#toggle-password");
+    const isVisible = passwordField.type === "text";
+    passwordField.type = isVisible ? "password" : "text";
+    toggle.setAttribute("aria-pressed", String(!isVisible));
+    toggle.querySelector(".material-symbols-outlined").textContent = isVisible ? "visibility" : "visibility_off";
+  });
 
   qs("#login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
