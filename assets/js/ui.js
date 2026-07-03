@@ -609,7 +609,7 @@ export function renderBookingConfirmation({ reservation, invoice, payments, amen
             <div class="signature-block">
               <div class="signature-line">
                 <strong>${escapeHtml(creator.full_name || "Front Office")}</strong><br>
-                Staff Signature
+                FO Staff
               </div>
             </div>
           </div>

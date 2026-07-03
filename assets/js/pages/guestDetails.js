@@ -1,7 +1,174 @@
 import { initProtectedPage } from "../router.js";
 import { getGuest } from "../services/guestsService.js";
 import { createEmptyState, createPageHeader, createStatusBadge, createVipBadge } from "../ui.js";
-import { formatCurrency, formatDate, formatDateTime, getQueryParam, render } from "../utils.js";
+import { escapeHtml, formatCurrency, formatDate, formatDateTime, getQueryParam, render } from "../utils.js";
+
+function renderPrintRows(rows, emptyMessage) {
+  return rows.length
+    ? rows.join("")
+    : `<tr><td colspan="5" class="muted">${escapeHtml(emptyMessage)}</td></tr>`;
+}
+
+function renderGuestProfileFolio({ guest, memberships, stays, invoices, amenities, serviceOrders, benefitUsage, printedBy }) {
+  const totalBilled = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const totalPaid = invoices.reduce((sum, invoice) => {
+    return sum + (invoice.payments || []).reduce((paymentSum, payment) => paymentSum + Number(payment.amount || 0), 0);
+  }, 0);
+  const latestStay = stays.slice().sort((a, b) => new Date(b.check_in || 0) - new Date(a.check_in || 0))[0];
+  const guestName = guest.full_name || "Guest";
+
+  return `
+    <section class="print-shell guest-profile-print">
+      <article class="print-card">
+        <header class="print-header">
+          <div>
+            <p class="eyebrow">Grand Millado Hotel</p>
+            <h1>Guest Profile Folio</h1>
+            <p class="muted">Professional guest profile, stay history, billing, and service activity.</p>
+          </div>
+          <div class="text-right">
+            <p class="eyebrow">Printed</p>
+            <h2 class="font-display">${escapeHtml(formatDateTime(new Date().toISOString()))}</h2>
+            <p class="muted">Prepared by ${escapeHtml(printedBy || "FO Staff")}</p>
+          </div>
+        </header>
+
+        <section class="print-section">
+          <h2>Guest Information</h2>
+          <div class="detail-grid">
+            <dl class="detail-kv"><dt>Guest Name</dt><dd>${escapeHtml(guestName)}</dd></dl>
+            <dl class="detail-kv"><dt>Email</dt><dd>${escapeHtml(guest.email || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Phone</dt><dd>${escapeHtml(guest.phone || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>VIP Status</dt><dd>${guest.vip_status ? "VIP Guest" : "Standard"}</dd></dl>
+            <dl class="detail-kv"><dt>Address</dt><dd>${escapeHtml(guest.address || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Preferences</dt><dd>${escapeHtml(guest.preferences || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Total Reservations</dt><dd>${escapeHtml(String(stays.length))}</dd></dl>
+            <dl class="detail-kv"><dt>Total Billed</dt><dd>${escapeHtml(formatCurrency(totalBilled))}</dd></dl>
+          </div>
+        </section>
+
+        <section class="print-section">
+          <h2>Stay Summary</h2>
+          <div class="detail-grid">
+            <dl class="detail-kv"><dt>Latest Reservation</dt><dd>${escapeHtml(latestStay?.confirmation_number || "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Latest Room</dt><dd>${escapeHtml(latestStay ? `Room ${latestStay.rooms?.room_number || "-"} - ${latestStay.rooms?.room_types?.name || "-"}` : "-")}</dd></dl>
+            <dl class="detail-kv"><dt>Memberships</dt><dd>${escapeHtml(String(memberships.length))}</dd></dl>
+            <dl class="detail-kv"><dt>Total Paid</dt><dd>${escapeHtml(formatCurrency(totalPaid))}</dd></dl>
+          </div>
+          <div class="table-wrap" style="margin-top:18px;">
+            <table>
+              <thead>
+                <tr><th>Confirmation</th><th>Room</th><th>Dates</th><th>Status</th><th>Total</th></tr>
+              </thead>
+              <tbody>
+                ${renderPrintRows(stays.map((reservation) => `
+                  <tr>
+                    <td>${escapeHtml(reservation.confirmation_number || `Reservation #${reservation.id}`)}</td>
+                    <td>${escapeHtml(`Room ${reservation.rooms?.room_number || "-"} - ${reservation.rooms?.room_types?.name || "-"}`)}</td>
+                    <td>${escapeHtml(`${formatDate(reservation.check_in)} to ${formatDate(reservation.check_out)}`)}</td>
+                    <td>${escapeHtml(`${reservation.status || "-"} / ${reservation.payment_status || "-"}`)}</td>
+                    <td>${escapeHtml(formatCurrency(reservation.total_amount || 0))}</td>
+                  </tr>
+                `), "No reservation history recorded.")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="print-section">
+          <h2>Billing Summary</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Invoice</th><th>Status</th><th>Items</th><th>Payments</th><th>Total</th></tr>
+              </thead>
+              <tbody>
+                ${renderPrintRows(invoices.map((invoice) => {
+                  const paid = (invoice.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+                  return `
+                    <tr>
+                      <td>${escapeHtml(invoice.invoice_number || `Invoice #${invoice.id}`)}</td>
+                      <td>${escapeHtml(invoice.status || "-")}</td>
+                      <td>${escapeHtml(String((invoice.invoice_items || []).length))}</td>
+                      <td>${escapeHtml(formatCurrency(paid))}</td>
+                      <td>${escapeHtml(formatCurrency(invoice.total || 0))}</td>
+                    </tr>
+                  `;
+                }), "No invoices recorded.")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="print-section">
+          <h2>Memberships, Services & Benefits</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Category</th><th>Description</th><th>Date / Term</th><th>Status</th><th>Amount</th></tr>
+              </thead>
+              <tbody>
+                ${renderPrintRows([
+                  ...memberships.map((membership) => `
+                    <tr>
+                      <td>Club</td>
+                      <td>${escapeHtml(`${membership.clubs?.name || "VIP Club"} - ${membership.membership_level || "Member"}`)}</td>
+                      <td>${escapeHtml(`${formatDate(membership.start_date)} to ${formatDate(membership.end_date)}`)}</td>
+                      <td>${escapeHtml(membership.status || "-")}</td>
+                      <td>-</td>
+                    </tr>
+                  `),
+                  ...amenities.map((booking) => `
+                    <tr>
+                      <td>Amenity</td>
+                      <td>${escapeHtml(`${booking.amenities?.name || "Amenity"} x ${booking.quantity || 1}`)}</td>
+                      <td>${escapeHtml(formatDate(booking.booking_date))}</td>
+                      <td>${escapeHtml(booking.status || "-")}</td>
+                      <td>${escapeHtml(formatCurrency(booking.total_amount || 0))}</td>
+                    </tr>
+                  `),
+                  ...serviceOrders.map((order) => `
+                    <tr>
+                      <td>Service</td>
+                      <td>${escapeHtml(`${order.hotel_services?.name || "Service"} x ${order.quantity || 1}`)}</td>
+                      <td>${escapeHtml(formatDateTime(order.created_at))}</td>
+                      <td>${escapeHtml(order.status || "-")}</td>
+                      <td>${escapeHtml(formatCurrency(order.total_amount || 0))}</td>
+                    </tr>
+                  `),
+                  ...benefitUsage.map((usage) => `
+                    <tr>
+                      <td>Benefit</td>
+                      <td>${escapeHtml(`${usage.club_benefits?.title || "VIP Benefit"} - ${usage.club_registrations?.clubs?.name || "VIP Club"}`)}</td>
+                      <td>${escapeHtml(formatDateTime(usage.used_at))}</td>
+                      <td>${escapeHtml(usage.club_registrations?.membership_level || "Member")}</td>
+                      <td>${escapeHtml(formatCurrency(usage.amount_discounted || 0))}</td>
+                    </tr>
+                  `),
+                ], "No memberships, services, amenities, or benefits recorded.")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="print-section signature-grid guest-profile-signatures">
+          <div class="signature-block">
+            <div class="signature-line">
+              <strong>${escapeHtml(guestName)}</strong><br>
+              Guest Signature
+            </div>
+          </div>
+          <div class="signature-block">
+            <div class="signature-line">
+              <strong>${escapeHtml(printedBy || "FO Staff")}</strong><br>
+              FO Staff
+            </div>
+          </div>
+        </section>
+      </article>
+    </section>
+  `;
+}
 
 await initProtectedPage("guests", async ({ root, auth }) => {
   const isAdmin = auth.profile.role === "Admin";
@@ -18,16 +185,19 @@ await initProtectedPage("guests", async ({ root, auth }) => {
   const amenities = guest.amenity_bookings || [];
   const serviceOrders = guest.service_orders || [];
   const benefitUsage = guest.club_benefit_usage || [];
+  const printedBy = auth.profile.full_name || "FO Staff";
 
   render(root, `
     ${createPageHeader({
       title: guest.full_name,
       subtitle: guest.vip_status ? "Premium guest profile with VIP access and club activity." : "Guest profile, stay history, and billing activity.",
       actions: `
+        <button class="btn btn-primary" id="print-guest-profile-button" type="button">Print Guest Profile</button>
         ${isAdmin ? '<a class="btn btn-secondary" href="clubs.html">Manage VIP Clubs</a>' : ""}
         <a class="btn btn-ghost" href="guests.html">Back to Guests</a>
       `,
     })}
+    <div class="guest-profile-screen">
     <section class="stitch-kpi-grid">
       <article class="stitch-kpi-card">
         <div class="stitch-kpi-iconrow"><span class="stitch-kpi-tag">Profile</span></div>
@@ -189,5 +359,9 @@ await initProtectedPage("guests", async ({ root, auth }) => {
         </div>
       ` : createEmptyState({ title: "No benefit usage yet", copy: "No VIP club benefits have been applied for this guest yet." })}
     </section>
+    </div>
+    ${renderGuestProfileFolio({ guest, memberships, stays, invoices, amenities, serviceOrders, benefitUsage, printedBy })}
   `);
+
+  document.getElementById("print-guest-profile-button")?.addEventListener("click", () => window.print());
 });
